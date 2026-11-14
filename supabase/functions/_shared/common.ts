@@ -97,6 +97,11 @@ export function jwtPayload(token: string): Record<string, unknown> {
 export async function requireAdmin(req: Request): Promise<{ id: string; email: string | null }> {
   const token = getBearer(req);
   if (!token) throw new HttpError('Inicia sesión como administrador.', 401, 'AUTH_REQUIRED');
+  const payload = jwtPayload(token);
+  const methods = Array.isArray(payload.amr) ? payload.amr as Array<Record<string, unknown>> : [];
+  if (!methods.some(method => method.method === 'otp')) {
+    throw new HttpError('Debes completar el código enviado al correo.', 403, 'EMAIL_MFA_REQUIRED');
+  }
   const client = authDb(token);
   const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) throw new HttpError('La sesión de administrador ha caducado.', 401, 'AUTH_INVALID');
