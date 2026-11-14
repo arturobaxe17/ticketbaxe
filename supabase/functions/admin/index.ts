@@ -211,14 +211,19 @@ Deno.serve(async (req: Request) => {
       await closeDueEvents(db);
       const { data: events, error } = await db.from('events').select('*').order('starts_at');
       if (error) throw new HttpError('No se pudieron cargar los eventos.', 500);
-      const summary = [];
-      for (const event of events ?? []) {
-        const { count: total } = await db.from('attendees').select('id', { count: 'exact', head: true }).eq('event_id', event.id).neq('status', 'cancelled');
-        const { count: confirmed } = await db.from('attendees').select('id', { count: 'exact', head: true }).eq('event_id', event.id).eq('status', 'confirmed');
-        const { count: pending } = await db.from('attendees').select('id', { count: 'exact', head: true }).eq('event_id', event.id).eq('status', 'pending');
-        const { count: groups } = await db.from('event_groups').select('group_id', { count: 'exact', head: true }).eq('event_id', event.id);
-        summary.push({ ...event, attendee_count: total ?? 0, confirmed_count: confirmed ?? 0, pending_count: pending ?? 0, group_count: groups ?? 0 });
-      }
+      const { data: metrics, error: metricsError } = await db.rpc('get_admin_event_metrics');
+      if (metricsError) throw new HttpError('No se pudieron calcular los contadores de los eventos.', 500);
+      const metricsByEvent = new Map((metrics ?? []).map((item: any) => [item.event_id, item]));
+      const summary = (events ?? []).map((event: any) => {
+        const item: any = metricsByEvent.get(event.id) ?? {};
+        return {
+          ...event,
+          attendee_count: Number(item.attendee_count ?? 0),
+          confirmed_count: Number(item.confirmed_count ?? 0),
+          pending_count: Number(item.pending_count ?? 0),
+          group_count: Number(item.group_count ?? 0),
+        };
+      });
       const { count: activeGroups } = await db.from('groups').select('id', { count: 'exact', head: true }).eq('active', true);
       return json(req, { ok: true, events: summary, active_groups: activeGroups ?? 0 });
     }
