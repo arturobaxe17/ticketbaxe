@@ -135,7 +135,7 @@ Deno.serve(async (req: Request) => {
       const { data: events, error: eventError } = await db.from('events').select('id').in('id', eventIds);
       if (eventError || (events?.length ?? 0) !== eventIds.length) throw new HttpError('Uno de los eventos seleccionados no existe.');
       const code = makeCode();
-      const codeHash = await hmacHex(env('CODE_HASH_SECRET'), code);
+      const codeHash = await hmacHex(await appSecret('CODE_HASH_SECRET'), code);
       const { data: group, error } = await db.from('groups').insert({
         label, responsible_name: responsible, contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
         code_hash: codeHash, code_last4: code.slice(-4), created_by: admin.id,
