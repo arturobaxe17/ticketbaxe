@@ -86,7 +86,7 @@ Deno.serve(async (req: Request) => {
       const { data: assignment } = await db.from('event_groups').select('event_id').eq('event_id', eventId).eq('group_id', group.id).maybeSingle();
       if (!assignment) throw new HttpError('Este evento no está asignado a tu grupo.', 403);
       await eventIsEditable(db, eventId);
-      const attendee = await storeAttendee(db, body.attendee ?? {}, group.id, 'group');
+      const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, group.id, 'group');
       return json(req, { ok: true, attendee });
     }
 
