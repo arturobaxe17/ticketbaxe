@@ -61,7 +61,7 @@ export function corsHeaders(req: Request): Record<string, string> {
     : configured.split(',')[0].trim();
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-portal-session, x-cron-secret',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-portal-session, x-admin-email-session, x-cron-secret',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
@@ -98,12 +98,27 @@ export async function requireAdmin(req: Request): Promise<{ id: string; email: s
   const token = getBearer(req);
   if (!token) throw new HttpError('Inicia sesión como administrador.', 401, 'AUTH_REQUIRED');
   const payload = jwtPayload(token);
-  if (payload.aal !== 'aal2') throw new HttpError('Debes verificar el segundo factor (MFA) para continuar.', 403, 'MFA_REQUIRED');
+  const methods = Array.isArray(payload.amr) ? payload.amr as Array<Record<string, unknown>> : [];
+  if (!methods.some(method => method.method === 'otp')) {
+    throw new HttpError('Completa la verificación del código enviado a tu correo.', 403, 'EMAIL_MFA_REQUIRED');
+  }
   const client = authDb(token);
   const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) throw new HttpError('La sesión de administrador ha caducado.', 401, 'AUTH_INVALID');
   if (data.user.app_metadata?.role !== 'admin') {
     throw new HttpError('Esta cuenta no tiene permisos de administración.', 403, 'ADMIN_REQUIRED');
+  }
+  const emailSessionToken = req.headers.get('x-admin-email-session') ?? '';
+  if (emailSessionToken.length < 32) {
+    throw new HttpError('Falta la verificación de seguridad por correo.', 403, 'EMAIL_MFA_REQUIRED');
+  }
+  const sessionHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-session:${emailSessionToken}`);
+  const { data: emailSession, error: sessionError } = await adminDb().from('admin_email_sessions')
+    .select('id, user_id, expires_at, revoked_at')
+    .eq('token_hash', sessionHash).maybeSingle();
+  if (sessionError || !emailSession || emailSession.user_id !== data.user.id || emailSession.revoked_at ||
+      new Date(emailSession.expires_at).getTime() <= Date.now()) {
+    throw new HttpError('La verificación por correo ha caducado. Vuelve a entrar.', 401, 'EMAIL_MFA_EXPIRED');
   }
   return { id: data.user.id, email: data.user.email ?? null };
 }
