@@ -178,20 +178,20 @@ export function normalizeDocument(value: string): string {
 export function validateDocument(type: string, value: string): string {
   const normalized = normalizeDocument(value);
   if (type === 'PASSPORT') {
-    if (!/^[A-Z0-9]{5,20}$/.test(normalized)) throw new HttpError('El pasaporte debe tener entre 5 y 20 letras o números.');
+    if (!/^[A-Z0-9]{5,20}$/.test(normalized)) throw new HttpError('Pasaporte incorrecto. Comprueba el formato.');
     return normalized;
   }
   if (type === 'DNI') {
-    if (!/^\d{8}[A-Z]$/.test(normalized)) throw new HttpError('El DNI debe tener 8 números y una letra.');
+    if (!/^\d{8}[A-Z]$/.test(normalized)) throw new HttpError('DNI incorrecto. Debe tener 8 números y una letra.');
     const letters = 'TRWAGMYFPDXBNJZSQVHLCKE';
-    if (letters[Number(normalized.slice(0, 8)) % 23] !== normalized[8]) throw new HttpError('La letra del DNI no es correcta.');
+    if (letters[Number(normalized.slice(0, 8)) % 23] !== normalized[8]) throw new HttpError('DNI incorrecto. Comprueba el número y la letra.');
     return normalized;
   }
   if (type === 'NIE') {
-    if (!/^[XYZ]\d{7}[A-Z]$/.test(normalized)) throw new HttpError('El NIE no tiene un formato válido.');
+    if (!/^[XYZ]\d{7}[A-Z]$/.test(normalized)) throw new HttpError('NIE incorrecto. Comprueba el formato.');
     const mapped = normalized.replace(/^X/, '0').replace(/^Y/, '1').replace(/^Z/, '2');
     const letters = 'TRWAGMYFPDXBNJZSQVHLCKE';
-    if (letters[Number(mapped.slice(0, 8)) % 23] !== normalized[8]) throw new HttpError('La letra del NIE no es correcta.');
+    if (letters[Number(mapped.slice(0, 8)) % 23] !== normalized[8]) throw new HttpError('NIE incorrecto. Comprueba el número y la letra.');
     return normalized;
   }
   throw new HttpError('Tipo de documento no válido.');
@@ -284,21 +284,44 @@ export async function storeAttendee(
 
   if (id) {
     const { data: existing, error: existingError } = await db.from('attendees')
-      .select('id, group_id, event_id').eq('id', id).maybeSingle();
+      .select('id, group_id, event_id, full_name, document_type, document_hash, paid')
+      .eq('id', id).maybeSingle();
     if (existingError || !existing || existing.group_id !== groupId || existing.event_id !== eventId) {
       throw new HttpError('No puedes modificar este asistente.', 404, 'ATTENDEE_NOT_FOUND');
     }
-    const { data, error } = await db.from('attendees').update({
+    const identityChanged =
+      existing.full_name !== fullName ||
+      existing.document_type !== documentType ||
+      existing.document_hash !== hash;
+    const updateValues: Record<string, unknown> = {
       full_name: fullName, document_type: documentType, document_ciphertext: encrypted.ciphertext,
       document_iv: encrypted.iv, document_hash: hash, status, updated_by_type: actorType,
-    }).eq('id', id).select('id, event_id, group_id, full_name, document_type, status, updated_at').single();
+    };
+    // Explicitly reset here as well as in the DB trigger. Changing identity details
+    // means the old payment confirmation no longer refers to the same attendee.
+    if (identityChanged) updateValues.paid = false;
+    const { data, error } = await db.from('attendees').update(updateValues)
+      .eq('id', id).select('id, event_id, group_id, full_name, document_type, status, paid, updated_at').single();
     if (error) {
       if (error.code === '23505') throw new HttpError('Este DNI/NIE/pasaporte ya está registrado en este evento.', 409, 'DUPLICATE_DOCUMENT');
       if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
       throw new HttpError('No se pudo guardar el asistente. Revisa los datos e inténtalo de nuevo.', 500);
     }
-    await writeAudit(db, { actor_type: actorType, actor_id: groupId, group_id: groupId, event_id: eventId, action: 'attendee.updated', details: { attendee_id: id, status } });
-    return { ...data, document: normalized };
+    await writeAudit(db, {
+      actor_type: actorType, actor_id: groupId, group_id: groupId, event_id: eventId,
+      action: 'attendee.updated',
+      details: {
+        attendee_id: id,
+        status,
+        identity_changed: identityChanged,
+        payment_reset: identityChanged && existing.paid === true,
+      },
+    });
+    return {
+      ...data,
+      document: normalized,
+      payment_reset: identityChanged && existing.paid === true,
+    };
   }
 
   const { data, error } = await db.from('attendees').insert({
