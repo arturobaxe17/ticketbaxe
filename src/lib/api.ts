@@ -28,8 +28,17 @@ export async function portalApi<T = any>(action: string, body: Record<string, un
   return parseResponse<T>(response);
 }
 
-export async function adminApi<T = any>(action: string, body: Record<string, unknown> = {}): Promise<ApiResult<T>> {
-  const { data, error } = await supabase.functions.invoke('admin', { body: { action, ...body } });
+export async function adminApi<T = any>(
+  action: string,
+  body: Record<string, unknown> = {},
+  extraHeaders: Record<string, string> = {},
+): Promise<ApiResult<T>> {
+  const emailSession = sessionStorage.getItem('ticketbaxe_admin_email_session');
+  const headers = {
+    ...(emailSession ? { 'x-admin-email-session': emailSession } : {}),
+    ...extraHeaders,
+  };
+  const { data, error } = await supabase.functions.invoke('admin', { body: { action, ...body }, headers });
   if (error) {
     const detail = typeof data?.error === 'string' ? data.error : error.message;
     throw new Error(detail || 'No se pudo completar la operación.');
