@@ -336,3 +336,5 @@ td strong { color: #2c3950; font-size: 11px; }
 .poster-current{display:flex;align-items:center;gap:12px;margin:8px 0 14px;color:#657187;font-size:12px}
 .poster-current img{width:76px;height:92px;object-fit:cover;border-radius:8px}
 .publish-option{margin:12px 0;padding:12px;border:1px solid #dce3ec;border-radius:10px}
+
+.duplicate-alert{display:flex;flex-direction:column;gap:5px;margin:14px 0;padding:13px 16px;border:1px solid #f0d28b;background:#fff8e7;border-radius:10px;color:#815300;font-size:13px}.duplicate-alert span{color:#765f34;line-height:1.45}
