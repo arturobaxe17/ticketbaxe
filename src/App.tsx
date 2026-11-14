@@ -283,10 +283,12 @@ function AdminApp() {
         await supabase.auth.signOut();
         throw new Error('Esta cuenta no tiene permisos de administrador.');
       }
+      const adminEmail = data.user.email ?? email.trim();
+      setEmail(adminEmail);
       setPasswordSessionToken(data.session.access_token);
       const challenge = await adminApi<{ ticket: string; masked_email: string }>('request_email_code');
       const { error: sendError } = await supabase.auth.signInWithOtp({
-        email: data.user.email ?? email.trim(),
+        email: adminEmail,
         options: { shouldCreateUser: false },
       });
       if (sendError) throw new Error(sendError.message || 'No se pudo enviar el código por correo.');
@@ -531,6 +533,7 @@ function AdminApp() {
   }
 
   async function logoutAdmin() {
+    await adminApi('logout_admin_session').catch(() => undefined);
     sessionStorage.removeItem('ticketbaxe_admin_email_session');
     setPasswordSessionToken(''); setEmailChallengeTicket(''); setEmailCode('');
     await supabase.auth.signOut(); setSession(null); setAuthStage('login'); setSelectedEvent(null);
