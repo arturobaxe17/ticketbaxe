@@ -31,7 +31,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
   for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
-  const nameKey = (value: string) => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]/g, '');
+  const nameKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]/g, '');
   const nameCounts = new Map<string, number>();
   for (const person of attendees) if (person.status !== 'cancelled') {
     const key = nameKey(String(person.full_name ?? ''));
@@ -230,8 +230,9 @@ Deno.serve(async (req: Request) => {
     if (action === 'set_attendee_paid') {
       const attendeeId = String(body.attendee_id ?? '');
       const paid = body.paid === true;
-      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name, paid').eq('id', attendeeId).maybeSingle();
+      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name, paid, status').eq('id', attendeeId).maybeSingle();
       if (!attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
+      if (attendee.status === 'cancelled') throw new HttpError('No se puede marcar el pago de una persona cancelada.');
       const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name } });
