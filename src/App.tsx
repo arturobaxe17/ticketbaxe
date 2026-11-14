@@ -41,7 +41,7 @@ function SetupNotice() {
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return <div className={`brand ${compact ? 'brand-compact' : ''}`}>
     <div className="brand-icon">✦</div>
-    <div><div className="brand-name">NAVIDAD <span>LISTAS</span></div><div className="brand-caption">GESTIÓN DE INVITADOS</div></div>
+    <div><div className="brand-name">TICKET<span>BAXE</span></div><div className="brand-caption">GESTIÓN DE INVITADOS</div></div>
   </div>;
 }
 
