@@ -26,11 +26,21 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
-    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, created_at, updated_at')
+    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
-  for (const row of rows ?? []) attendees.push(await decryptAttendee(row));
+  for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
+  const nameKey = (value: string) => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]/g, '');
+  const nameCounts = new Map<string, number>();
+  for (const person of attendees) if (person.status !== 'cancelled') {
+    const key = nameKey(String(person.full_name ?? ''));
+    if (key) nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  for (const person of attendees) {
+    const key = nameKey(String(person.full_name ?? ''));
+    person.name_duplicate = person.status !== 'cancelled' && Boolean(key) && (nameCounts.get(key) ?? 0) > 1;
+  }
   const { data: snapshots } = await db.from('official_snapshots')
     .select('id, version, attendee_count, confirmed_count, pending_count, created_at, created_by_type')
     .eq('event_id', eventId).order('version', { ascending: false });
@@ -212,6 +222,17 @@ Deno.serve(async (req: Request) => {
       await eventIsEditable(db, eventId);
       const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, groupId, 'admin');
       return json(req, { ok: true, attendee });
+    }
+
+    if (action === 'set_attendee_paid') {
+      const attendeeId = String(body.attendee_id ?? '');
+      const paid = body.paid === true;
+      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name, paid').eq('id', attendeeId).maybeSingle();
+      if (!attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
+      const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
+      if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
+      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name } });
+      return json(req, { ok: true, paid });
     }
 
     if (action === 'cancel_attendee') {
