@@ -184,6 +184,21 @@ Deno.serve(async (req: Request) => {
     const admin = await requireAdmin(req);
     if (action === 'verify_email_session') return json(req, { ok: true, email: admin.email });
 
+    if (action === 'create_poster_upload') {
+      const eventId = String(body.event_id ?? '');
+      const contentType = String(body.content_type ?? '');
+      const extensions: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+      const extension = extensions[contentType];
+      if (!eventId || !extension) throw new HttpError('Selecciona un evento y un cartel JPG, PNG o WEBP.', 400);
+      const { data: event } = await db.from('events').select('id').eq('id', eventId).maybeSingle();
+      if (!event) throw new HttpError('No se ha encontrado el evento.', 404);
+      const path = `${eventId}/${crypto.randomUUID()}.${extension}`;
+      const { data, error } = await db.storage.from('event-posters').createSignedUploadUrl(path, { upsert: false });
+      if (error || !data?.token) throw new HttpError('No se pudo preparar la subida del cartel.', 500);
+      const publicUrl = db.storage.from('event-posters').getPublicUrl(path).data.publicUrl;
+      return json(req, { ok: true, path, token: data.token, public_url: publicUrl });
+    }
+
     if (action === 'dashboard') {
       await closeDueEvents(db);
       const { data: events, error } = await db.from('events').select('*').order('starts_at');
