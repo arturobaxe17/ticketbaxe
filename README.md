@@ -22,7 +22,7 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 
 ### Administración (`/admin`)
 
-- Acceso mediante usuario administrador de Supabase y segundo factor TOTP obligatorio.
+- Acceso con contraseña de Supabase y, después, código OTP de seis cifras enviado al correo confirmado del administrador.
 - Crear eventos con fecha, hora, fecha límite de edición, aforo opcional y cartel JPG/PNG/WEBP (máximo 5 MB).
 - Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
 - Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
@@ -41,8 +41,8 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Una persona cancelada no cuenta como entrada activa y su registro queda en el historial.
 - Un mismo documento no puede tener dos registros activos en el mismo evento, aunque lo intenten desde grupos distintos.
 - El aforo se comprueba también en base de datos para evitar que dos altas simultáneas ocupen la misma última plaza.
-- El estado de pago solo puede modificarlo un administrador con MFA; se muestra en el portal del grupo y se conserva en las listas oficiales.
-- El bucket público `event-posters` solo permite lectura pública de imágenes. Las subidas, cambios y borrados requieren una sesión de administrador con MFA.
+- El estado de pago solo puede modificarlo un administrador que haya superado la contraseña y el código OTP por correo; se muestra en el portal del grupo y se conserva en las listas oficiales.
+- El bucket público `event-posters` solo permite lectura pública de imágenes. Las subidas, cambios y borrados requieren una sesión de administrador verificada por correo.
 - El CSV oficial siempre procede de un snapshot cifrado. Las correcciones posteriores requieren publicar una nueva versión.
 - Una exportación CSV contiene datos personales en texto claro: protégela y elimínala cuando ya no sea necesaria.
 
@@ -53,7 +53,7 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Base de datos: PostgreSQL de Supabase.
 - Códigos de acceso y sesiones: HMAC-SHA-256.
 - Documentos identificativos: AES-256-GCM; índice de duplicados mediante HMAC.
-- Protección de administración: Supabase Auth + MFA TOTP + `app_metadata.role=admin` + nivel `aal2`.
+- Protección de administración: Supabase Auth contraseña + OTP por email + sesión interna de ocho horas + `app_metadata.role=admin`.
 - Automatización del cierre: GitHub Actions cada cinco minutos. El bloqueo de edición es inmediato en el servidor, sin depender de que se ejecute el cron puntual.
 
 La aplicación no necesita una base de datos ni un servidor de pago adicional al proyecto Supabase. Los límites y condiciones del plan de Supabase pueden cambiar; revisa el uso y los límites vigentes en tu cuenta antes de abrir el registro a muchos usuarios.
@@ -80,7 +80,7 @@ Las tablas privadas tienen RLS activado y no conceden acceso directo a los roles
 ## 2. Crear el primer administrador
 
 1. En Supabase abre **Authentication → Users** y crea el usuario administrador con su correo.
-2. Habilita el segundo factor TOTP para esa cuenta.
+2. Comprueba que el correo esté confirmado. No hace falta configurar Google Authenticator ni otro autenticador.
 3. En **SQL Editor**, asigna el rol `admin` a ese correo ejecutando lo siguiente y sustituyendo el correo de ejemplo:
 
 ```sql
@@ -89,9 +89,24 @@ set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"ad
 where email = 'TU_CORREO_REAL';
 ```
 
-4. Inicia sesión en `/admin` y completa la configuración TOTP.
+4. Inicia sesión en `/admin` con contraseña. TicketBaxe solicitará un código OTP enviado al mismo correo.
 
 El rol se guarda en `app_metadata`, nunca en `user_metadata`, porque este último puede ser modificado por el propio usuario.
+
+### Configurar el código de acceso por correo
+
+En **Supabase → Authentication → Email Templates → Magic Link**, sustituye el contenido de la plantilla por un mensaje que incluya `{{ .Token }}` y no incluya `{{ .ConfirmationURL }}`. Por ejemplo:
+
+```html
+<h2>TicketBaxe · Código de acceso</h2>
+<p>Tu código de acceso de un solo uso es:</p>
+<p style="font-size:30px;font-weight:700;letter-spacing:8px">{{ .Token }}</p>
+<p>Introduce este código en la pantalla de administración. Si no has intentado entrar, ignora este mensaje.</p>
+```
+
+Supabase envía un código numérico si la plantilla contiene `{{ .Token }}`; si contiene `{{ .ConfirmationURL }}`, envía un enlace en lugar del código. La verificación caduca en diez minutos en TicketBaxe.
+
+**Importante para el envío:** el servicio de correo integrado de Supabase está limitado para pruebas. Para enviar mensajes a cualquier dirección y usarlo con normalidad, configura un proveedor SMTP propio en los ajustes de autenticación del proyecto. No compartas las credenciales SMTP en GitHub ni en el frontend; configúralas solo en Supabase.
 
 ## 3. Secretos y cifrado
 
@@ -109,7 +124,7 @@ No copies estas claves a GitHub, al navegador ni a archivos públicos. No cambie
 
 Las funciones `admin`, `portal` y `close-due-events` están desplegadas en el proyecto alojado.
 
-- `admin` valida la sesión de Supabase Auth, el rol de administrador y MFA `aal2`.
+- `admin` valida la contraseña reciente, el OTP de correo y el rol de administrador. Solo después emite una sesión interna temporal.
 - `portal` valida los códigos privados de grupo y sus sesiones.
 - `close-due-events` valida su secreto propio de cierre.
 
