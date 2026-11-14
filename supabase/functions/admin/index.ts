@@ -89,6 +89,18 @@ async function requestAdminEmailCode(req: Request, db: ReturnType<typeof adminDb
   if (recentError) throw new HttpError('No se pudo comprobar el límite de envío.', 500);
   if (recent?.length) throw new HttpError('Espera un minuto antes de solicitar otro código.', 429, 'OTP_RATE_LIMIT');
 
+  // Personal Gmail accounts are limited to 500 sent messages per rolling 24 hours.
+  // Keep TicketBaxe well below that threshold even if an admin session is abused.
+  const dailySince = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const { count: dailyChallenges, error: dailyError } = await db.from('admin_email_challenges')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', data.user.id)
+    .gt('created_at', dailySince);
+  if (dailyError) throw new HttpError('No se pudo comprobar el límite diario de correo.', 500);
+  if ((dailyChallenges ?? 0) >= 100) {
+    throw new HttpError('Se ha alcanzado el límite diario de códigos. Vuelve a intentarlo mañana.', 429, 'OTP_DAILY_LIMIT');
+  }
+
   const ticket = randomToken(32);
   const challengeHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-challenge:${ticket}`);
   const { error: insertError } = await db.from('admin_email_challenges').insert({
@@ -262,7 +274,7 @@ Deno.serve(async (req: Request) => {
         if (!Number.isInteger(cap) || cap < 1 || cap > 100000) throw new HttpError('El aforo no es válido.');
         update.capacity = cap;
       }
-      const { data: current } = await db.from('events').select('starts_at, deadline_at').eq('id', eventId).maybeSingle();
+      const { data: current } = await db.from('events').select('starts_at, deadline_at, poster_url').eq('id', eventId).maybeSingle();
       if (!current) throw new HttpError('No se ha encontrado el evento.', 404);
       const starts = String(update.starts_at ?? current.starts_at);
       const deadline = String(update.deadline_at ?? current.deadline_at);
@@ -273,6 +285,28 @@ Deno.serve(async (req: Request) => {
       }
       const { data: event, error } = await db.from('events').update(update).eq('id', eventId).select('*').single();
       if (error) throw new HttpError('No se pudo actualizar el evento.', 400);
+
+      // When a poster is replaced or removed, delete the previous object so Storage
+      // does not accumulate orphaned versions of the same event image.
+      if (Object.prototype.hasOwnProperty.call(update, 'poster_url') &&
+          current.poster_url && current.poster_url !== event.poster_url) {
+        try {
+          const configuredOrigin = new URL(env('SUPABASE_URL')).origin;
+          const previousUrl = new URL(String(current.poster_url));
+          const prefix = '/storage/v1/object/public/event-posters/';
+          const prefixIndex = previousUrl.pathname.indexOf(prefix);
+          if (previousUrl.origin === configuredOrigin && prefixIndex >= 0) {
+            const objectPath = decodeURIComponent(previousUrl.pathname.slice(prefixIndex + prefix.length));
+            if (objectPath && !objectPath.split('/').some(part => part === '..')) {
+              const { error: removeError } = await db.storage.from('event-posters').remove([objectPath]);
+              if (removeError) console.error('No se pudo eliminar el cartel anterior:', removeError.message);
+            }
+          }
+        } catch (cleanupError) {
+          console.error('No se pudo limpiar el cartel anterior:', cleanupError);
+        }
+      }
+
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, event_id: eventId, action: 'event.updated', details: { fields: Object.keys(update) } });
       return json(req, { ok: true, event });
     }
