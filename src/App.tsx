@@ -215,9 +215,10 @@ function PortalApp() {
 
 function AdminApp() {
   const [session, setSession] = useState<any>(null);
-  const [authStage, setAuthStage] = useState<'checking' | 'login' | 'verify' | 'enroll' | 'app'>('checking');
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [totp, setTotp] = useState('');
-  const [factorId, setFactorId] = useState(''); const [qrCode, setQrCode] = useState(''); const [totpSecret, setTotpSecret] = useState('');
+  const [authStage, setAuthStage] = useState<'checking' | 'login' | 'verify-email' | 'app'>('checking');
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [emailCode, setEmailCode] = useState('');
+  const [passwordSessionToken, setPasswordSessionToken] = useState(''); const [emailChallengeTicket, setEmailChallengeTicket] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
   const [notice, setNotice] = useState<Notice>(null); const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<'dashboard' | 'groups' | 'audit'>('dashboard');
   const [events, setEvents] = useState<EventRecord[]>([]); const [activeGroups, setActiveGroups] = useState(0);
@@ -251,54 +252,77 @@ function AdminApp() {
 
   async function prepareMfa(currentSession: any) {
     if (currentSession.user?.app_metadata?.role !== 'admin') {
+      sessionStorage.removeItem('ticketbaxe_admin_email_session');
       await supabase.auth.signOut(); setAuthStage('login'); notify('error', 'Esta cuenta no tiene permisos de administrador.'); return;
     }
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.currentLevel === 'aal2') { setAuthStage('app'); await loadDashboard(); return; }
-    const { data: factorsData } = await supabase.auth.mfa.listFactors();
-    const verified = factorsData?.totp?.find((item: any) => item.status === 'verified');
-    if (verified) { setFactorId(verified.id); setAuthStage('verify'); }
-    else {
-      const unverified = factorsData?.totp?.filter((item: any) => item.status !== 'verified') ?? [];
-      for (const factor of unverified) await supabase.auth.mfa.unenroll({ factorId: factor.id }).catch(() => undefined);
-      const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Administrador TicketBaxe' });
-      if (error || !data) { notify('error', error?.message || 'No se pudo iniciar la configuración de MFA.'); setAuthStage('login'); return; }
-      setFactorId(data.id); setQrCode(data.totp.qr_code); setTotpSecret(data.totp.secret); setAuthStage('enroll');
+    if (!sessionStorage.getItem('ticketbaxe_admin_email_session')) {
+      await supabase.auth.signOut();
+      setAuthStage('login');
+      return;
+    }
+    try {
+      await adminApi('verify_email_session');
+      setAuthStage('app');
+      await loadDashboard();
+    } catch {
+      sessionStorage.removeItem('ticketbaxe_admin_email_session');
+      await supabase.auth.signOut();
+      setAuthStage('login');
+      notify('info', 'La verificación por correo ha caducado. Vuelve a entrar.');
     }
   }
 
   async function handleAdminLogin(event: FormEvent) {
     event.preventDefault(); setBusy(true); setNotice(null);
+    sessionStorage.removeItem('ticketbaxe_admin_email_session');
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error || !data.session) throw new Error(error?.message || 'No se pudo iniciar sesión.');
       setSession(data.session);
-      if (data.user.app_metadata?.role !== 'admin') { await supabase.auth.signOut(); throw new Error('Esta cuenta no tiene permisos de administrador.'); }
-      await prepareMfa(data.session);
-    } catch (error) { notify('error', (error as Error).message); }
-    finally { setBusy(false); }
+      if (data.user.app_metadata?.role !== 'admin') {
+        await supabase.auth.signOut();
+        throw new Error('Esta cuenta no tiene permisos de administrador.');
+      }
+      setPasswordSessionToken(data.session.access_token);
+      const challenge = await adminApi<{ ticket: string; masked_email: string }>('request_email_code');
+      const { error: sendError } = await supabase.auth.signInWithOtp({
+        email: data.user.email ?? email.trim(),
+        options: { shouldCreateUser: false },
+      });
+      if (sendError) throw new Error(sendError.message || 'No se pudo enviar el código por correo.');
+      setEmailChallengeTicket(challenge.ticket);
+      setMaskedEmail(challenge.masked_email);
+      setEmailCode('');
+      setAuthStage('verify-email');
+      notify('success', 'Te hemos enviado un código de seis cifras.');
+    } catch (error) {
+      notify('error', (error as Error).message);
+    } finally { setBusy(false); }
   }
 
-  async function verifyMfa(event: FormEvent) {
+  async function verifyEmailCode(event: FormEvent) {
     event.preventDefault(); setBusy(true); setNotice(null);
     try {
-      const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: totp.trim() });
-      if (error) throw error;
-      const { data } = await supabase.auth.getSession(); setSession(data.session);
-      setAuthStage('app'); await loadDashboard(); notify('success', 'Verificación completada.');
-    } catch (error) { notify('error', (error as Error).message || 'El código no es correcto.'); }
-    finally { setBusy(false); setTotp(''); }
-  }
-
-  async function confirmEnrollment(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setNotice(null);
-    try {
-      const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: totp.trim() });
-      if (error) throw error;
-      const { data } = await supabase.auth.getSession(); setSession(data.session);
-      setAuthStage('app'); await loadDashboard(); notify('success', 'Verificación en dos pasos activada.');
-    } catch (error) { notify('error', (error as Error).message || 'No se pudo verificar el código.'); }
-    finally { setBusy(false); setTotp(''); }
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: emailCode.trim(),
+        type: 'email',
+      });
+      if (error || !data.session) throw new Error(error?.message || 'El código no es correcto o ha caducado.');
+      setSession(data.session);
+      const result = await adminApi<{ session_token: string }>(
+        'complete_email_code',
+        { ticket: emailChallengeTicket },
+        { 'x-admin-password-session': passwordSessionToken },
+      );
+      sessionStorage.setItem('ticketbaxe_admin_email_session', result.session_token);
+      setEmailChallengeTicket(''); setPasswordSessionToken(''); setEmailCode('');
+      setAuthStage('app');
+      await loadDashboard();
+      notify('success', 'Acceso seguro verificado. Bienvenido al panel.');
+    } catch (error) {
+      notify('error', (error as Error).message || 'No se pudo verificar el código.');
+    } finally { setBusy(false); }
   }
 
   async function loadDashboard() {
@@ -502,19 +526,22 @@ function AdminApp() {
     downloadCsv(`${selectedEvent.event.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-provisional.csv`, rows);
   }
 
-  async function logoutAdmin() { await supabase.auth.signOut(); setSession(null); setAuthStage('login'); setSelectedEvent(null); }
+  async function logoutAdmin() {
+    sessionStorage.removeItem('ticketbaxe_admin_email_session');
+    setPasswordSessionToken(''); setEmailChallengeTicket(''); setEmailCode('');
+    await supabase.auth.signOut(); setSession(null); setAuthStage('login'); setSelectedEvent(null);
+  }
 
   if (authStage !== 'app') return <div className="admin-auth-shell">
     <div className="admin-auth-top"><BrandMark compact /><a className="back-link" href="/">← Volver al portal</a></div>
     <div className="admin-auth-card">
       {authStage === 'checking' ? <div className="loading-panel"><div className="spinner" />Comprobando sesión…</div> : <>
         <div className="admin-lock">⌑</div><span className="eyebrow">ADMINISTRACIÓN PRIVADA</span>
-        {authStage === 'login' && <><h1>Panel de control</h1><p>Accede con la cuenta de administrador.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Accediendo…' : 'Entrar al panel →'}</button></form></>}
-        {authStage === 'verify' && <><h1>Verificación en dos pasos</h1><p>Introduce el código de seis cifras de tu aplicación de autenticación.</p><form onSubmit={verifyMfa} className="stack-form"><label className="field-label">Código de autenticación</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totp} onChange={e => setTotp(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || totp.length !== 6}>{busy ? 'Verificando…' : 'Verificar y entrar'}</button></form></>}
-        {authStage === 'enroll' && <><h1>Activa la verificación</h1><p>Escanea este QR con Google Authenticator, Microsoft Authenticator o una aplicación TOTP compatible.</p>{qrCode && <div className="qr-holder"><img src={`data:image/svg+xml;utf8,${encodeURIComponent(qrCode)}`} alt="Código QR para configurar MFA" /></div>}<div className="secret-box"><span>Clave manual</span><code>{totpSecret}</code></div><form onSubmit={confirmEnrollment} className="stack-form"><label className="field-label">Código de seis cifras</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totp} onChange={e => setTotp(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || totp.length !== 6}>{busy ? 'Activando…' : 'Activar y entrar'}</button></form></>}
+        {authStage === 'login' && <><h1>Panel de control</h1><p>Accede con tu cuenta de administrador. Después te enviaremos un código al correo.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Comprobando…' : 'Continuar →'}</button></form></>}
+        {authStage === 'verify-email' && <><h1>Comprueba tu correo</h1><p>Hemos enviado un código de seis cifras a <strong>{maskedEmail || email}</strong>. Introdúcelo para acceder al panel.</p><form onSubmit={verifyEmailCode} className="stack-form"><label className="field-label">Código enviado por correo</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || emailCode.length !== 6}>{busy ? 'Verificando…' : 'Verificar y entrar'}</button></form><button type="button" className="text-button" disabled={busy} onClick={() => { void logoutAdmin(); }}>Volver al inicio de sesión</button></>}
         <NoticeBar notice={notice} clear={() => setNotice(null)} />
       </>}
-      <div className="auth-bottom">Acceso restringido · Se requiere segundo factor de autenticación.</div>
+      <div className="auth-bottom">Acceso restringido · Contraseña y código de un solo uso por correo.</div>
     </div>
   </div>;
 
