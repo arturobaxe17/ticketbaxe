@@ -72,11 +72,11 @@ Deno.serve(async (req: Request) => {
         .select('id, name, description, starts_at, deadline_at, capacity, status').eq('id', eventId).maybeSingle();
       if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
       const { data: rows, error: rowsError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, created_at, updated_at')
+        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
         .eq('event_id', eventId).eq('group_id', group.id).order('created_at');
       if (rowsError) throw new HttpError('No se han podido cargar los asistentes.', 500);
       const attendees = [];
-      for (const row of rows ?? []) attendees.push(await decryptAttendee(row));
+      for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
       event.editable = event.status === 'open' && new Date(event.deadline_at).getTime() > Date.now();
       return json(req, { ok: true, event, attendees });
     }
