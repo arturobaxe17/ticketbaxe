@@ -361,12 +361,16 @@ function AdminApp() {
       }
       if (savedEventId) setEventForm(current => ({ ...current, id: savedEventId }));
       if (posterFile && savedEventId) {
-        const extension = posterFile.type === 'image/png' ? 'png' : posterFile.type === 'image/webp' ? 'webp' : 'jpg';
-        const objectPath = `${savedEventId}/${crypto.randomUUID()}.${extension}`;
-        const { error: uploadError } = await supabase.storage.from('event-posters').upload(objectPath, posterFile, { cacheControl: '3600', upsert: false, contentType: posterFile.type });
+        const signedUpload = await adminApi<{ path: string; token: string; public_url: string }>(
+          'create_poster_upload',
+          { event_id: savedEventId, content_type: posterFile.type },
+        );
+        const { error: uploadError } = await supabase.storage.from('event-posters')
+          .uploadToSignedUrl(signedUpload.path, signedUpload.token, posterFile, {
+            cacheControl: '3600', upsert: false, contentType: posterFile.type,
+          });
         if (uploadError) throw uploadError;
-        const publicUrl = supabase.storage.from('event-posters').getPublicUrl(objectPath).data.publicUrl;
-        await adminApi('update_event', { event_id: savedEventId, poster_url: publicUrl });
+        await adminApi('update_event', { event_id: savedEventId, poster_url: signedUpload.public_url });
       }
       setShowEventForm(false); setPosterFile(null); setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' });
       await loadDashboard(); notify('success', eventForm.id ? 'Evento actualizado.' : 'Evento creado.');
@@ -594,7 +598,7 @@ function AdminApp() {
         </>}
       </>}
     </main>
-    <footer className="footer"><span>© {new Date().getFullYear()} · TicketBaxe</span><span>Panel protegido con MFA · Datos cifrados</span></footer>
+    <footer className="footer"><span>© {new Date().getFullYear()} · TicketBaxe</span><span>Acceso verificado por correo · Datos cifrados</span></footer>
 
     {showEventForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createOrUpdateEvent}><div className="modal-head"><div><span className="eyebrow">CALENDARIO</span><h2>{eventForm.id ? 'Editar evento' : 'Crear evento'}</h2></div><button type="button" className="icon-button" onClick={() => setShowEventForm(false)}>×</button></div><label className="field-label">Nombre del evento</label><input className="input" value={eventForm.name} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} required maxLength={120} placeholder="Ej. Concierto Navidad · 19 de diciembre" /><label className="field-label">Descripción (opcional)</label><textarea className="input textarea" value={eventForm.description} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} maxLength={800} placeholder="Información adicional para los responsables" /><div className="form-two"><div><label className="field-label">Fecha y hora del evento</label><input className="input" type="datetime-local" value={eventForm.starts_at} onChange={e => setEventForm({ ...eventForm, starts_at: e.target.value })} required /></div><div><label className="field-label">Límite para modificar listas</label><input className="input" type="datetime-local" value={eventForm.deadline_at} onChange={e => setEventForm({ ...eventForm, deadline_at: e.target.value })} required /></div></div><label className="field-label">Aforo máximo (opcional)</label><input className="input" type="number" min="1" max="100000" value={eventForm.capacity} onChange={e => setEventForm({ ...eventForm, capacity: e.target.value })} placeholder="Dejar vacío si no hay límite" /><label className="field-label">Cartel del evento (JPG, PNG o WEBP · máximo 5 MB)</label><input className="input" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPosterFile(e.target.files?.[0] ?? null)} />{eventForm.poster_url && !posterFile && <div className="poster-current"><img src={eventForm.poster_url} alt="Cartel actual" /><span>Cartel actual guardado</span></div>}<label className="checkbox-option publish-option"><input type="checkbox" checked={eventForm.is_published} onChange={e => setEventForm({ ...eventForm, is_published: e.target.checked })} /><span><strong>Evento visible para los responsables</strong><small>Desmarca para ocultarlo sin eliminarlo ni perder sus listas.</small></span></label><div className="form-note">La hora se interpreta en la zona horaria del navegador (España peninsular). El servidor bloqueará las modificaciones al llegar al límite.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowEventForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : eventForm.id ? 'Guardar cambios' : 'Guardar evento'}</button></div></form></div>}
 
