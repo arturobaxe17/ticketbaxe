@@ -40,8 +40,11 @@ function SetupNotice() {
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return <div className={`brand ${compact ? 'brand-compact' : ''}`}>
-    <div className="brand-icon">✦</div>
-    <div><div className="brand-name">TICKET<span>BAXE</span></div><div className="brand-caption">GESTIÓN DE INVITADOS</div></div>
+    <img className="brand-symbol" src="/ticketbaxe-mark.svg" alt="" aria-hidden="true" />
+    <div className="brand-lockup">
+      <div className="brand-name"><span className="brand-ticket">TICKET</span><span>BAXE</span></div>
+      <div className="brand-caption">EVENTOS · LISTAS · ACCESOS</div>
+    </div>
   </div>;
 }
 
