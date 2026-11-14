@@ -90,6 +90,7 @@ Deno.serve(async (req: Request) => {
       const { data: event, error } = await db.from('events').insert({
         name, description: typeof body.description === 'string' ? body.description.slice(0, 800) : '',
         starts_at: startsAt, deadline_at: deadlineAt, capacity, created_by: admin.id,
+        is_published: body.is_published !== false, poster_url: typeof body.poster_url === 'string' ? body.poster_url.slice(0, 1000) : null,
       }).select('*').single();
       if (error) throw new HttpError('No se pudo crear el evento. Comprueba las fechas y el aforo.', 400);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, event_id: event.id, action: 'event.created', details: { name } });
@@ -101,6 +102,8 @@ Deno.serve(async (req: Request) => {
       const update: Record<string, unknown> = {};
       if (typeof body.name === 'string') update.name = assertString(body.name, 'El nombre', 120);
       if (typeof body.description === 'string') update.description = body.description.slice(0, 800);
+      if (typeof body.is_published === 'boolean') update.is_published = body.is_published;
+      if (body.poster_url === null || typeof body.poster_url === 'string') update.poster_url = body.poster_url ? body.poster_url.slice(0, 1000) : null;
       if (typeof body.starts_at === 'string') update.starts_at = parseIso(body.starts_at, 'La fecha del evento');
       if (typeof body.deadline_at === 'string') update.deadline_at = parseIso(body.deadline_at, 'La fecha límite');
       if (body.capacity === null || body.capacity === '') update.capacity = null;
