@@ -12,11 +12,12 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Un identificador por grupo, válido para todos los eventos asignados a ese grupo.
 - Vista de eventos con fecha, hora, plazas ocupadas y plazo de modificación.
 - Añadir, corregir y cancelar asistentes.
-- Validación matemática de DNI/NIE españoles y validación de formato de pasaporte. La comprobación de la letra de control no demuestra que un documento pertenezca a una persona real; para eso haría falta una verificación oficial de identidad.
+- Validación matemática de DNI/NIE españoles y validación de formato de pasaporte. Los errores se muestran como «DNI incorrecto», «NIE incorrecto» o «Pasaporte incorrecto», según corresponda. La comprobación de la letra de control no demuestra que un documento pertenezca a una persona real; para eso haría falta una verificación oficial de identidad.
 - Aviso de documentos duplicados dentro de un mismo evento.
 - Avisos administrativos de posibles nombres repetidos, ignorando tildes, mayúsculas y signos; son advertencias, no bloqueos.
 - Estados confirmado, pendiente y cancelado.
 - El responsable puede consultar por persona si la organización ha marcado su entrada como pagada; no puede cambiar ese dato.
+- Si el responsable modifica el nombre, el tipo de documento o el número de documento de una persona, el sistema retira automáticamente el estado de pagado. La organización debe volver a comprobar los datos antes de marcarlo como pagado.
 - El responsable también se puede añadir como asistente; no se cuenta automáticamente por el mero hecho de ser responsable.
 - Sesión de portal con caducidad de 12 horas.
 
@@ -25,7 +26,7 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Acceso con contraseña de Supabase y, después, código OTP de seis cifras enviado al correo confirmado del administrador.
 - Crear eventos con fecha, hora, fecha límite de edición, aforo opcional y cartel JPG/PNG/WEBP (máximo 5 MB).
 - Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
-- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
+- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso. Cualquier cambio posterior de nombre o documento restablece el pago a pendiente mediante un trigger de base de datos.
 - Crear grupos y asignarles uno o varios eventos.
 - Generar, renovar y revocar códigos de grupo. El código completo solo se muestra una vez.
 - Bloquear o activar grupos.
@@ -73,6 +74,7 @@ El proyecto online ya está configurado. Se han aplicado las migraciones:
 - Carteles y publicación/ocultación de eventos.
 - Secretos privados en Supabase Vault.
 - Protección de funciones y rutas de base de datos.
+- Restablecimiento automático del pago al modificar datos identificativos y mensajes de validación específicos para DNI/NIE/pasaporte.
 - Cierre automático programado cada cinco minutos con Supabase Cron.
 - Contadores de eventos agregados en SQL para evitar consultas repetidas por evento.
 - Índices adicionales para listas y relaciones, y limpieza diaria de sesiones/códigos caducados.
