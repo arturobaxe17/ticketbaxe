@@ -239,7 +239,7 @@ function AdminApp() {
     void (async () => {
       const { data } = await supabase.auth.getSession();
       if (!alive) return;
-      if (data.session) { setSession(data.session); await prepareMfa(data.session); }
+      if (data.session) { setSession(data.session); await restoreAdminEmailSession(data.session); }
       else setAuthStage('login');
     })();
     const { data: listener } = supabase.auth.onAuthStateChange((_event, current) => {
@@ -250,7 +250,7 @@ function AdminApp() {
     return () => { alive = false; listener.subscription.unsubscribe(); };
   }, []);
 
-  async function prepareMfa(currentSession: any) {
+  async function restoreAdminEmailSession(currentSession: any) {
     if (currentSession.user?.app_metadata?.role !== 'admin') {
       sessionStorage.removeItem('ticketbaxe_admin_email_session');
       await supabase.auth.signOut(); setAuthStage('login'); notify('error', 'Esta cuenta no tiene permisos de administrador.'); return;
