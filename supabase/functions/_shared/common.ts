@@ -8,6 +8,19 @@ export function env(name: string): string {
   return value;
 }
 
+const appSecretCache = new Map<string, string>();
+
+export async function appSecret(name: string): Promise<string> {
+  const configured = Deno.env.get(name);
+  if (configured) return configured;
+  const cached = appSecretCache.get(name);
+  if (cached) return cached;
+  const { data, error } = await adminDb().rpc('get_app_secret', { p_name: name });
+  if (error || typeof data !== 'string' || !data) throw new Error(`Falta configurar el secreto ${name} en Supabase Vault.`);
+  appSecretCache.set(name, data);
+  return data;
+}
+
 function getSecretKey(): string {
   const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
   if (modern) {
@@ -127,7 +140,7 @@ function fromBase64(value: string): Uint8Array {
 }
 
 async function encryptionKey(): Promise<CryptoKey> {
-  const key = fromBase64(env('DNI_ENCRYPTION_KEY'));
+  const key = fromBase64(await appSecret('DNI_ENCRYPTION_KEY'));
   if (key.length !== 32) throw new Error('DNI_ENCRYPTION_KEY debe ser una clave Base64 de 32 bytes.');
   return crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
@@ -170,7 +183,7 @@ export function validateDocument(type: string, value: string): string {
 }
 
 export async function documentHash(normalized: string): Promise<string> {
-  return hmacHex(env('DNI_HASH_SECRET'), normalized);
+  return hmacHex(await appSecret('DNI_HASH_SECRET'), normalized);
 }
 
 export async function writeAudit(
@@ -214,7 +227,7 @@ export function assertString(value: unknown, label: string, max = 140): string {
 export async function getGroupSession(req: Request, db: SupabaseClient): Promise<{ sessionId: string; group: Record<string, any> }> {
   const token = req.headers.get('x-portal-session');
   if (!token || token.length < 20) throw new HttpError('Introduce de nuevo tu identificador.', 401, 'PORTAL_AUTH');
-  const tokenHash = await hmacHex(env('SESSION_HASH_SECRET'), token);
+  const tokenHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), token);
   const { data: session, error } = await db.from('portal_sessions')
     .select('id, group_id, expires_at, revoked_at')
     .eq('token_hash', tokenHash).maybeSingle();
