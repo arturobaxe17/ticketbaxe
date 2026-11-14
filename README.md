@@ -12,16 +12,20 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Un identificador por grupo, válido para todos los eventos asignados a ese grupo.
 - Vista de eventos con fecha, hora, plazas ocupadas y plazo de modificación.
 - Añadir, corregir y cancelar asistentes.
-- Validación de DNI y NIE españoles, y validación básica de pasaporte.
+- Validación matemática de DNI/NIE españoles y validación de formato de pasaporte. La comprobación de la letra de control no demuestra que un documento pertenezca a una persona real; para eso haría falta una verificación oficial de identidad.
 - Aviso de documentos duplicados dentro de un mismo evento.
+- Avisos administrativos de posibles nombres repetidos, ignorando tildes, mayúsculas y signos; son advertencias, no bloqueos.
 - Estados confirmado, pendiente y cancelado.
+- El responsable puede consultar por persona si la organización ha marcado su entrada como pagada; no puede cambiar ese dato.
 - El responsable también se puede añadir como asistente; no se cuenta automáticamente por el mero hecho de ser responsable.
 - Sesión de portal con caducidad de 12 horas.
 
 ### Administración (`/admin`)
 
 - Acceso mediante usuario administrador de Supabase y segundo factor TOTP obligatorio.
-- Crear eventos con fecha, hora, fecha límite de edición y aforo opcional.
+- Crear eventos con fecha, hora, fecha límite de edición, aforo opcional y cartel JPG/PNG/WEBP (máximo 5 MB).
+- Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
+- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
 - Crear grupos y asignarles uno o varios eventos.
 - Generar, renovar y revocar códigos de grupo. El código completo solo se muestra una vez.
 - Bloquear o activar grupos.
@@ -37,6 +41,8 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Una persona cancelada no cuenta como entrada activa y su registro queda en el historial.
 - Un mismo documento no puede tener dos registros activos en el mismo evento, aunque lo intenten desde grupos distintos.
 - El aforo se comprueba también en base de datos para evitar que dos altas simultáneas ocupen la misma última plaza.
+- El estado de pago solo puede modificarlo un administrador con MFA; se muestra en el portal del grupo y se conserva en las listas oficiales.
+- El bucket público `event-posters` solo permite lectura pública de imágenes. Las subidas, cambios y borrados requieren una sesión de administrador con MFA.
 - El CSV oficial siempre procede de un snapshot cifrado. Las correcciones posteriores requieren publicar una nueva versión.
 - Una exportación CSV contiene datos personales en texto claro: protégela y elimínala cuando ya no sea necesaria.
 
@@ -75,7 +81,7 @@ supabase link --project-ref TU_PROJECT_REF
 supabase db push
 ```
 
-La migración `supabase/migrations/0001_initial_schema.sql` crea el esquema, índices, restricciones de aforo, control de duplicados, RLS y las funciones de limitación de intentos.
+Las migraciones `supabase/migrations/0001_initial_schema.sql`, `0002_attendee_payment.sql` y `0003_event_posters_visibility.sql` crean el esquema, el control de pagos, los carteles, la publicación de eventos, índices, restricciones de aforo, control de duplicados, RLS y funciones de limitación de intentos. Ejecuta `supabase db push` para aplicar todas las migraciones pendientes.
 
 ## 3. Crear el primer administrador
 
