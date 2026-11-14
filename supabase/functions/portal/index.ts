@@ -1,5 +1,5 @@
 import {
-  adminDb, corsHeaders, decryptAttendee, env, fail, getGroupSession, hmacHex, HttpError,
+  adminDb, appSecret, corsHeaders, decryptAttendee, fail, getGroupSession, hmacHex, HttpError,
   json, randomToken, storeAttendee, eventIsEditable, writeAudit,
 } from '../_shared/common.ts';
 
@@ -16,12 +16,12 @@ Deno.serve(async (req: Request) => {
       const code = typeof body.code === 'string' ? body.code.trim().toUpperCase().replace(/\s/g, '') : '';
       if (!/^[A-Z0-9-]{12,50}$/.test(code)) throw new HttpError('Introduce un identificador válido.');
       const ip = (req.headers.get('x-forwarded-for') ?? req.headers.get('cf-connecting-ip') ?? 'unknown').split(',')[0].trim();
-      const ipHash = await hmacHex(env('SESSION_HASH_SECRET'), ip);
+      const ipHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), ip);
       const { data: allowed, error: rateError } = await db.rpc('portal_login_allowed', { p_ip_hash: ipHash });
       if (rateError) throw new HttpError('No se ha podido validar el acceso. Inténtalo de nuevo.', 503);
       if (!allowed) throw new HttpError('Demasiados intentos. Espera 15 minutos antes de volver a intentarlo.', 429, 'RATE_LIMITED');
 
-      const codeHash = await hmacHex(env('CODE_HASH_SECRET'), code);
+      const codeHash = await hmacHex(await appSecret('CODE_HASH_SECRET'), code);
       const { data: group, error } = await db.from('groups')
         .select('id, label, responsible_name, contact, active')
         .eq('code_hash', codeHash).maybeSingle();
@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
       }
       await db.rpc('clear_portal_login_attempt', { p_ip_hash: ipHash });
       const sessionToken = randomToken(32);
-      const tokenHash = await hmacHex(env('SESSION_HASH_SECRET'), sessionToken);
+      const tokenHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), sessionToken);
       const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
       const { error: sessionError } = await db.from('portal_sessions').insert({
         group_id: group.id, token_hash: tokenHash, expires_at: expiresAt,
