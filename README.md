@@ -74,6 +74,9 @@ El proyecto online ya está configurado. Se han aplicado las migraciones:
 - Secretos privados en Supabase Vault.
 - Protección de funciones y rutas de base de datos.
 - Cierre automático programado cada cinco minutos con Supabase Cron.
+- Contadores de eventos agregados en SQL para evitar consultas repetidas por evento.
+- Índices adicionales para listas y relaciones, y limpieza diaria de sesiones/códigos caducados.
+- Caché de un año para recursos Vite con nombre versionado, y revalidación del HTML principal.
 
 Las tablas privadas tienen RLS activado y no conceden acceso directo a los roles del navegador. La aplicación consulta y modifica los datos a través de Edge Functions.
 
@@ -129,6 +132,18 @@ Las funciones `admin`, `portal` y `close-due-events` están desplegadas en el pr
 - `close-due-events` valida su secreto propio de cierre.
 
 Supabase Cron ejecuta la revisión cada cinco minutos mediante `pg_cron` y `pg_net`. La base de datos impide modificar listas en cuanto vence el plazo, aunque el snapshot oficial automático se genere en la siguiente ejecución.
+
+### Consumo y límites de uso
+
+El plan actual de Supabase es Free. Sus cuotas publicadas incluyen 500 MB de base de datos, 5 GB de transferencia, 1 GB de almacenamiento de objetos y 500.000 invocaciones de Edge Functions por ciclo mensual. El plan Free puede restringir el servicio si se exceden repetidamente las cuotas; no es una capacidad ilimitada.
+
+El portal de responsables usa identificadores de grupo propios y no crea una cuenta Supabase Auth por cada asistente. El administrador sí utiliza Supabase Auth. El cierre automático consume aproximadamente 8.640 invocaciones al mes (una cada cinco minutos); las acciones de responsables y administración se suman a esa cifra.
+
+La aplicación limita las solicitudes de código de correo a 1 por minuto y 100 por cada 24 horas para mantener margen frente a los límites de envío del SMTP Gmail personal. Al sustituir un cartel se elimina el objeto anterior de Storage. Las sesiones de portal y administración y los códigos OTP caducados se limpian cada día.
+
+Netlify Free aplica un límite compartido de 300 créditos mensuales. Los despliegues de producción, las solicitudes y los GB transferidos consumen esos créditos; al agotarlos, los proyectos se pausan hasta que se renueve el ciclo o se cambie de plan. El archivo `_headers` mantiene los ficheros versionados de Vite en caché para reducir transferencias repetidas.
+
+Estas medidas reducen el consumo, pero no garantizan capacidad ilimitada. Revisa el uso en **Supabase → Organization → Usage** y **Netlify → Usage & billing**. Para un evento con tráfico alto o difusión masiva, estima el consumo antes de abrir las inscripciones y considera un alojamiento estático con solicitudes ilimitadas y/o Supabase Pro con Spend Cap activado.
 
 ## 5. Frontend y publicación
 
