@@ -183,6 +183,14 @@ Deno.serve(async (req: Request) => {
     }
     const admin = await requireAdmin(req);
     if (action === 'verify_email_session') return json(req, { ok: true, email: admin.email });
+    if (action === 'logout_admin_session') {
+      const sessionToken = req.headers.get('x-admin-email-session') ?? '';
+      const tokenHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-session:${sessionToken}`);
+      const { error } = await db.from('admin_email_sessions').update({ revoked_at: new Date().toISOString() })
+        .eq('user_id', admin.id).eq('token_hash', tokenHash).is('revoked_at', null);
+      if (error) throw new HttpError('No se pudo cerrar la sesión protegida.', 500);
+      return json(req, { ok: true });
+    }
 
     if (action === 'create_poster_upload') {
       const eventId = String(body.event_id ?? '');
