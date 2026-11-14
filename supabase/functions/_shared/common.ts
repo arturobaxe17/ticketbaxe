@@ -197,6 +197,7 @@ export async function decryptAttendee(row: Record<string, any>): Promise<Record<
     document_type: row.document_type,
     document: await decryptText(row.document_ciphertext, row.document_iv),
     status: row.status,
+    paid: row.paid === true,
     created_at: row.created_at,
     updated_at: row.updated_at,
     created_by_type: row.created_by_type,
@@ -296,7 +297,7 @@ export async function createOfficialSnapshot(
   if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
   if (event.status !== 'closed') throw new HttpError('El evento debe estar cerrado antes de crear una lista oficial.', 409, 'EVENT_NOT_CLOSED');
   const { data: rows, error: rowsError } = await db.from('attendees')
-    .select('id, group_id, full_name, document_type, document_ciphertext, document_iv, status, created_at, updated_at')
+    .select('id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
     .eq('event_id', eventId).neq('status', 'cancelled').order('full_name');
   if (rowsError) throw new HttpError('No se pudo preparar la lista oficial.', 500);
   const groupIds = [...new Set((rows ?? []).map((r: any) => r.group_id))];
@@ -310,7 +311,7 @@ export async function createOfficialSnapshot(
     records.push({
       id: row.id, group_id: row.group_id, group_label: groupMap[row.group_id] ?? 'Grupo',
       full_name: row.full_name, document_type: row.document_type,
-      document: await decryptText(row.document_ciphertext, row.document_iv), status: row.status,
+      document: await decryptText(row.document_ciphertext, row.document_iv), status: row.status, paid: row.paid === true,
       created_at: row.created_at, updated_at: row.updated_at,
     });
   }
