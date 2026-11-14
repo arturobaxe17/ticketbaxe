@@ -126,12 +126,17 @@ function PortalApp() {
     if (!selectedEvent || !token) return;
     setSaving(true); setNotice(null);
     try {
-      await portalApi('save_attendee', {
+      const result = await portalApi<{ attendee: { payment_reset?: boolean } }>('save_attendee', {
         event_id: selectedEvent.id,
         attendee: { ...form, id: form.id || undefined },
       }, token);
       setShowForm(false); await refreshSelected();
-      notify('success', form.id ? 'Asistente actualizado.' : 'Asistente añadido a tu lista.');
+      notify(
+        'success',
+        result.attendee?.payment_reset
+          ? 'Datos modificados: el pago vuelve a estar pendiente y la organización debe comprobarlo de nuevo.'
+          : form.id ? 'Asistente actualizado.' : 'Asistente añadido a tu lista.',
+      );
     } catch (error) { notify('error', (error as Error).message); }
     finally { setSaving(false); }
   }
@@ -465,8 +470,14 @@ function AdminApp() {
   async function saveAdminAttendee(event: FormEvent) {
     event.preventDefault(); if (!selectedEvent) return; setBusy(true);
     try {
-      await adminApi('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
-      setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event); notify('success', 'Asistente guardado por administración.');
+      const result = await adminApi<{ attendee: { payment_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
+      setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event);
+      notify(
+        'success',
+        result.attendee?.payment_reset
+          ? 'Datos modificados: el pago vuelve a estar pendiente.'
+          : 'Asistente guardado por administración.',
+      );
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
   }
