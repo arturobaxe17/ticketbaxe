@@ -1,6 +1,6 @@
 import {
-  adminDb, appSecret, assertString, closeDueEvents, createOfficialSnapshot, corsHeaders, decryptAttendee, decryptText,
-  env, eventIsEditable, fail, hmacHex, HttpError, json, randomToken, requireAdmin, storeAttendee, writeAudit,
+  adminDb, appSecret, assertString, authDb, closeDueEvents, createOfficialSnapshot, corsHeaders, decryptAttendee, decryptText,
+  env, eventIsEditable, fail, getBearer, hmacHex, HttpError, json, jwtPayload, randomToken, requireAdmin, storeAttendee, writeAudit,
 } from '../_shared/common.ts';
 
 function makeCode(): string {
@@ -52,15 +52,137 @@ function parseIso(value: unknown, label: string): string {
   return new Date(value).toISOString();
 }
 
+
+function hasAuthMethod(payload: Record<string, unknown>, method: string): boolean {
+  const methods = Array.isArray(payload.amr) ? payload.amr as Array<Record<string, unknown>> : [];
+  return methods.some(item => item?.method === method);
+}
+
+function isFreshAuth(payload: Record<string, unknown>, maxAgeMinutes = 10): boolean {
+  const issuedAt = Number(payload.iat ?? 0) * 1000;
+  return Number.isFinite(issuedAt) && issuedAt > 0 &&
+    issuedAt <= Date.now() + 60_000 && Date.now() - issuedAt <= maxAgeMinutes * 60_000;
+}
+
+function maskEmail(value: string): string {
+  const [name, domain] = value.split('@');
+  if (!name || !domain) return 'tu correo';
+  return `${name.slice(0, 1)}•••@${domain}`;
+}
+
+async function requestAdminEmailCode(req: Request, db: ReturnType<typeof adminDb>) {
+  const token = getBearer(req);
+  if (!token) throw new HttpError('Inicia sesión con tu contraseña primero.', 401, 'AUTH_REQUIRED');
+  const payload = jwtPayload(token);
+  if (!hasAuthMethod(payload, 'password') || !isFreshAuth(payload) || typeof payload.session_id !== 'string') {
+    throw new HttpError('Vuelve a introducir tu contraseña para solicitar un nuevo código.', 403, 'PASSWORD_REAUTH_REQUIRED');
+  }
+  const { data, error } = await authDb(token).auth.getUser(token);
+  if (error || !data.user) throw new HttpError('La sesión ha caducado. Vuelve a entrar.', 401, 'AUTH_INVALID');
+  if (data.user.app_metadata?.role !== 'admin') throw new HttpError('Esta cuenta no tiene permisos de administración.', 403, 'ADMIN_REQUIRED');
+  const email = String(data.user.email ?? '').trim().toLowerCase();
+  if (!email || !data.user.email_confirmed_at) throw new HttpError('La cuenta debe tener un correo confirmado.', 400, 'EMAIL_NOT_CONFIRMED');
+
+  const recentSince = new Date(Date.now() - 60_000).toISOString();
+  const { data: recent, error: recentError } = await db.from('admin_email_challenges')
+    .select('id').eq('user_id', data.user.id).gt('created_at', recentSince).limit(1);
+  if (recentError) throw new HttpError('No se pudo comprobar el límite de envío.', 500);
+  if (recent?.length) throw new HttpError('Espera un minuto antes de solicitar otro código.', 429, 'OTP_RATE_LIMIT');
+
+  const ticket = randomToken(32);
+  const challengeHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-challenge:${ticket}`);
+  const { error: insertError } = await db.from('admin_email_challenges').insert({
+    user_id: data.user.id,
+    email,
+    challenge_hash: challengeHash,
+    password_session_id: payload.session_id,
+    expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+  });
+  if (insertError) throw new HttpError('No se pudo preparar el envío del código.', 500);
+  return { ok: true, ticket, masked_email: maskEmail(email), expires_in_seconds: 600 };
+}
+
+async function completeAdminEmailCode(req: Request, body: Record<string, unknown>, db: ReturnType<typeof adminDb>) {
+  const emailToken = getBearer(req);
+  const passwordToken = req.headers.get('x-admin-password-session') ?? '';
+  const ticket = typeof body.ticket === 'string' ? body.ticket : '';
+  if (!emailToken || passwordToken.length < 40 || ticket.length < 30) {
+    throw new HttpError('Falta completar la verificación de contraseña y correo.', 401, 'AUTH_REQUIRED');
+  }
+
+  const emailPayload = jwtPayload(emailToken);
+  if (!hasAuthMethod(emailPayload, 'otp') || !isFreshAuth(emailPayload)) {
+    throw new HttpError('El código de correo no se ha verificado correctamente. Solicita uno nuevo.', 403, 'EMAIL_OTP_REQUIRED');
+  }
+  const { data: emailAuth, error: emailAuthError } = await authDb(emailToken).auth.getUser(emailToken);
+  if (emailAuthError || !emailAuth.user) throw new HttpError('La verificación del correo ha caducado.', 401, 'EMAIL_OTP_INVALID');
+
+  const passwordPayload = jwtPayload(passwordToken);
+  if (!hasAuthMethod(passwordPayload, 'password') || !isFreshAuth(passwordPayload) ||
+      typeof passwordPayload.session_id !== 'string') {
+    throw new HttpError('La comprobación de contraseña ha caducado. Vuelve a entrar.', 403, 'PASSWORD_REAUTH_REQUIRED');
+  }
+  const { data: passwordAuth, error: passwordAuthError } = await authDb(passwordToken).auth.getUser(passwordToken);
+  if (passwordAuthError || !passwordAuth.user || passwordAuth.user.id !== emailAuth.user.id) {
+    throw new HttpError('La contraseña y el código deben pertenecer a la misma cuenta.', 403, 'AUTH_MISMATCH');
+  }
+  if (emailAuth.user.app_metadata?.role !== 'admin' || passwordAuth.user.app_metadata?.role !== 'admin') {
+    throw new HttpError('Esta cuenta no tiene permisos de administración.', 403, 'ADMIN_REQUIRED');
+  }
+
+  const email = String(emailAuth.user.email ?? '').trim().toLowerCase();
+  const challengeHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-challenge:${ticket}`);
+  const { data: challenge, error: challengeError } = await db.from('admin_email_challenges')
+    .select('id, user_id, email, password_session_id, expires_at, used_at')
+    .eq('challenge_hash', challengeHash).eq('user_id', emailAuth.user.id).maybeSingle();
+  if (challengeError || !challenge || challenge.used_at ||
+      new Date(challenge.expires_at).getTime() <= Date.now() ||
+      challenge.email.toLowerCase() !== email ||
+      challenge.password_session_id !== passwordPayload.session_id) {
+    throw new HttpError('El código ha caducado o ya se ha utilizado. Vuelve a solicitarlo.', 401, 'EMAIL_CHALLENGE_INVALID');
+  }
+
+  const now = new Date().toISOString();
+  const { data: claimed, error: claimError } = await db.from('admin_email_challenges')
+    .update({ used_at: now }).eq('id', challenge.id).is('used_at', null).select('id').maybeSingle();
+  if (claimError || !claimed) throw new HttpError('Este código ya se ha utilizado. Solicita otro.', 409, 'EMAIL_CHALLENGE_USED');
+
+  await db.from('admin_email_sessions').update({ revoked_at: now })
+    .eq('user_id', emailAuth.user.id).is('revoked_at', null);
+  const sessionToken = randomToken(32);
+  const tokenHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-session:${sessionToken}`);
+  const { error: sessionError } = await db.from('admin_email_sessions').insert({
+    user_id: emailAuth.user.id,
+    token_hash: tokenHash,
+    expires_at: new Date(Date.now() + 8 * 60 * 60_000).toISOString(),
+  });
+  if (sessionError) throw new HttpError('No se pudo abrir la sesión de administración.', 500);
+  await writeAudit(db, {
+    actor_type: 'admin',
+    actor_id: emailAuth.user.id,
+    action: 'admin.email_otp_verified',
+    details: { method: 'email_otp' },
+  });
+  return { ok: true, session_token: sessionToken, expires_in_seconds: 8 * 60 * 60 };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   if (req.method !== 'POST') return fail(req, 'Método no permitido.', 405);
 
   try {
-    const admin = await requireAdmin(req);
     const db = adminDb();
     const body = await req.json().catch(() => ({}));
     const action = typeof body.action === 'string' ? body.action : '';
+
+    if (action === 'request_email_code') {
+      return json(req, await requestAdminEmailCode(req, db));
+    }
+    if (action === 'complete_email_code') {
+      return json(req, await completeAdminEmailCode(req, body, db));
+    }
+    const admin = await requireAdmin(req);
+    if (action === 'verify_email_session') return json(req, { ok: true, email: admin.email });
 
     if (action === 'dashboard') {
       await closeDueEvents(db);
