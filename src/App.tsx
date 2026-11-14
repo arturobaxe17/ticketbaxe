@@ -335,6 +335,7 @@ function AdminApp() {
         const created = await adminApi<{ event: EventRecord }>('create_event', payload);
         savedEventId = created.event.id;
       }
+      if (savedEventId) setEventForm(current => ({ ...current, id: savedEventId }));
       if (posterFile && savedEventId) {
         const extension = posterFile.type === 'image/png' ? 'png' : posterFile.type === 'image/webp' ? 'webp' : 'jpg';
         const objectPath = `${savedEventId}/${crypto.randomUUID()}.${extension}`;
