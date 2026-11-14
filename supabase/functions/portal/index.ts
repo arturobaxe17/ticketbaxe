@@ -50,16 +50,21 @@ Deno.serve(async (req: Request) => {
       if (ids.length) {
         const { data, error: eventsError } = await db.from('events').select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('is_published', true).in('id', ids).order('starts_at');
         if (eventsError) throw new HttpError('No se han podido cargar tus eventos.', 500);
-        events = data ?? [];
-        for (const event of events) {
-          const { count } = await db.from('attendees').select('id', { count: 'exact', head: true })
-            .eq('event_id', event.id).eq('group_id', group.id).neq('status', 'cancelled');
-          event.group_attendee_count = count ?? 0;
-          event.editable = event.status === 'open' && new Date(event.deadline_at).getTime() > Date.now();
-          const { count: total } = await db.from('attendees').select('id', { count: 'exact', head: true })
-            .eq('event_id', event.id).neq('status', 'cancelled');
-          event.total_attendee_count = total ?? 0;
-        }
+        const { data: metrics, error: metricsError } = await db.rpc('get_group_event_metrics', {
+          p_group_id: group.id,
+          p_event_ids: ids,
+        });
+        if (metricsError) throw new HttpError('No se han podido calcular los contadores de tus eventos.', 500);
+        const metricsByEvent = new Map((metrics ?? []).map((item: any) => [item.event_id, item]));
+        events = (data ?? []).map((event: any) => {
+          const item: any = metricsByEvent.get(event.id) ?? {};
+          return {
+            ...event,
+            group_attendee_count: Number(item.group_attendee_count ?? 0),
+            total_attendee_count: Number(item.total_attendee_count ?? 0),
+            editable: event.status === 'open' && new Date(event.deadline_at).getTime() > Date.now(),
+          };
+        });
       }
       return json(req, { ok: true, group, events });
     }
