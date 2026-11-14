@@ -13,7 +13,7 @@ type EventRecord = {
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -194,8 +194,8 @@ function PortalApp() {
         <div className="detail-stats"><div><span>Asistentes de tu grupo</span><strong>{activeAttendees.length}</strong></div><div><span>Entradas confirmadas</span><strong>{confirmedCount}</strong></div><div><span>Plazo de modificación</span><strong className="stat-date">{dateTime(selectedEvent.deadline_at)}</strong></div></div>
         {!selectedEvent.editable && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
         <div className="section-heading attendee-heading"><div><h2>Personas de tu grupo</h2><p>Cada persona activa cuenta como una entrada. Añade también al responsable si va a asistir.</p></div>{selectedEvent.editable && <button className="button button-primary" onClick={startNew}>＋ Añadir asistente</button>}</div>
-        {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Estado</th><th className="action-cell">Acciones</th></tr></thead><tbody>
-          {attendees.map(person => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td className="action-cell">{selectedEvent.editable && <div className="row-actions"><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button>}</div>}</td></tr>)}
+        {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+          {attendees.map(person => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td>{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td><td className="action-cell">{selectedEvent.editable && <div className="row-actions"><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button>}</div>}</td></tr>)}
         </tbody></table></div><div className="table-foot">Los datos se guardan en el servidor. Las personas canceladas se conservan en el historial, pero no cuentan como entrada.</div></div>}
       </>}
     </main>
@@ -426,6 +426,17 @@ function AdminApp() {
     finally { setBusy(false); }
   }
 
+  async function toggleAttendeePaid(person: Attendee) {
+    if (!selectedEvent) return;
+    setBusy(true);
+    try {
+      await adminApi('set_attendee_paid', { attendee_id: person.id, paid: !person.paid });
+      await openAdminEvent(selectedEvent.event);
+      notify('success', person.paid ? 'Pago marcado como pendiente.' : 'Asistente marcado como pagado.');
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function cancelAdminAttendee(person: Attendee) {
     if (!window.confirm(`¿Cancelar a ${person.full_name}?`)) return;
     setBusy(true);
@@ -508,8 +519,8 @@ function AdminApp() {
         {selectedEvent.event.status !== 'open' && selectedEvent.event.status !== 'cancelled' && <div className="reopen-panel"><div><strong>¿Necesitas abrirlo de nuevo?</strong><p>La versión oficial actual no se modifica. Al cerrar otra vez se generará una versión nueva.</p></div><div className="reopen-controls"><input type="datetime-local" className="input" value={reopenDeadline} onChange={e => setReopenDeadline(e.target.value)} /><button className="button button-light" onClick={() => void reopenEvent()} disabled={busy}>Reabrir evento</button></div></div>}
         <div className="section-heading"><div><h2>Asistentes registrados</h2><p>Los DNI solo se muestran dentro del panel protegido de administración.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir asistente</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
-        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>Documento</th><th>Estado</th><th className="action-cell">Acciones</th></tr></thead><tbody>
-          {selectedEvent.attendees.map((person: Attendee) => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td>{selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '—'}</td><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td className="action-cell">{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td></tr>)}
+        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+          {selectedEvent.attendees.map((person: Attendee) => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td>{selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '—'}</td><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy}>{person.paid ? '✓ Pagado' : 'Marcar pagado'}</button> : '—'}</td><td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td></tr>)}
           {selectedEvent.attendees.length === 0 && <tr><td colSpan={5} className="empty-cell">No hay asistentes registrados.</td></tr>}
         </tbody></table></div></div>
         <div className="section-heading snapshots-heading"><div><h2>Versiones oficiales</h2><p>Cada versión queda congelada y se conserva aunque reabras el evento.</p></div></div>
