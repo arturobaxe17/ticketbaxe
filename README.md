@@ -104,7 +104,7 @@ En **Supabase → Authentication → Email Templates → Magic Link**, sustituye
 <p>Introduce este código en la pantalla de administración. Si no has intentado entrar, ignora este mensaje.</p>
 ```
 
-Supabase envía un código numérico si la plantilla contiene `{{ .Token }}`; si contiene `{{ .ConfirmationURL }}`, envía un enlace en lugar del código. La verificación caduca en diez minutos en TicketBaxe.
+Supabase envía un código numérico si la plantilla contiene `{{ .Token }}`; si contiene `{{ .ConfirmationURL }}`, envía un enlace en lugar del código. En **Authentication → Providers → Email**, ajusta también **Email OTP Expiration** a `600` segundos. TicketBaxe invalida el reto a los diez minutos aunque el proveedor admita un plazo mayor.
 
 **Importante para el envío:** el servicio de correo integrado de Supabase está limitado para pruebas. Para enviar mensajes a cualquier dirección y usarlo con normalidad, configura un proveedor SMTP propio en los ajustes de autenticación del proyecto. No compartas las credenciales SMTP en GitHub ni en el frontend; configúralas solo en Supabase.
 
