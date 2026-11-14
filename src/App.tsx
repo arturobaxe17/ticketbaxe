@@ -496,7 +496,7 @@ function AdminApp() {
     const rows = (selectedEvent.attendees ?? []).filter((p: Attendee) => p.status !== 'cancelled').map((person: Attendee) => ({
       Grupo: selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
       Nombre: person.full_name, Tipo_documento: person.document_type, Documento: person.document,
-      Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente',
+      Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
     }));
     if (!rows.length) { notify('info', 'No hay asistentes activos para exportar.'); return; }
     downloadCsv(`${selectedEvent.event.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-provisional.csv`, rows);
