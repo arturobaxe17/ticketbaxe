@@ -1,11 +1,11 @@
-import { adminDb, corsHeaders, env, fail, json, closeDueEvents } from '../_shared/common.ts';
+import { adminDb, appSecret, corsHeaders, fail, json, closeDueEvents } from '../_shared/common.ts';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   if (req.method !== 'POST') return fail(req, 'Método no permitido.', 405);
   try {
     const received = req.headers.get('x-cron-secret') ?? '';
-    const expected = env('CRON_SECRET');
+    const expected = await appSecret('CRON_SECRET');
     // Compare fixed-length digests rather than secrets directly.
     const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
     const a = await digest(received);
