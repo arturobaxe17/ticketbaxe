@@ -1,5 +1,5 @@
 import {
-  adminDb, assertString, closeDueEvents, createOfficialSnapshot, corsHeaders, decryptAttendee, decryptText,
+  adminDb, appSecret, assertString, closeDueEvents, createOfficialSnapshot, corsHeaders, decryptAttendee, decryptText,
   env, eventIsEditable, fail, hmacHex, HttpError, json, randomToken, requireAdmin, storeAttendee, writeAudit,
 } from '../_shared/common.ts';
 
@@ -9,7 +9,7 @@ function makeCode(): string {
 
 async function saveGroupCode(db: ReturnType<typeof adminDb>, groupId: string): Promise<string> {
   const code = makeCode();
-  const hash = await hmacHex(env('CODE_HASH_SECRET'), code);
+  const hash = await hmacHex(await appSecret('CODE_HASH_SECRET'), code);
   const { error } = await db.from('groups').update({ code_hash: hash, code_last4: code.slice(-4) }).eq('id', groupId);
   if (error) throw new HttpError('No se pudo generar el identificador.', 500);
   return code;
