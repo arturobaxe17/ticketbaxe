@@ -60,131 +60,68 @@ La aplicación no necesita una base de datos ni un servidor de pago adicional al
 
 ---
 
-# Puesta en marcha
+# Puesta en marcha (Supabase online)
 
-## 1. Crear el proyecto Supabase
+TicketBaxe utiliza el proyecto Supabase alojado en la nube. No necesita Supabase local, Docker ni ejecutar migraciones desde un ordenador.
 
-1. Crea un proyecto en Supabase.
-2. En **Project Settings → API**, copia la URL del proyecto y la clave pública `anon` (o publishable compatible).
-3. Comprueba que el proveedor Email está habilitado en **Authentication → Providers**.
-4. Mantén habilitado TOTP/MFA para usuarios de administración.
+## 1. Proyecto Supabase conectado
 
-No introduzcas nunca la `service_role` o `secret key` en archivos `VITE_*`, en GitHub ni en el código del navegador.
+El proyecto online ya está configurado. Se han aplicado las migraciones:
 
-## 2. Crear las tablas
+- Esquema inicial, tablas, restricciones de aforo, índices y RLS.
+- Estado de pago individual por asistente.
+- Carteles y publicación/ocultación de eventos.
+- Secretos privados en Supabase Vault.
+- Protección de funciones y rutas de base de datos.
+- Cierre automático programado cada cinco minutos con Supabase Cron.
 
-Con Supabase CLI instalado y autenticado, desde la raíz del proyecto:
+Las tablas privadas tienen RLS activado y no conceden acceso directo a los roles del navegador. La aplicación consulta y modifica los datos a través de Edge Functions.
 
-```bash
-supabase login
-supabase link --project-ref TU_PROJECT_REF
-supabase db push
+## 2. Crear el primer administrador
+
+1. En Supabase abre **Authentication → Users** y crea el usuario administrador con su correo.
+2. Habilita el segundo factor TOTP para esa cuenta.
+3. En **SQL Editor**, asigna el rol `admin` a ese correo ejecutando lo siguiente y sustituyendo el correo de ejemplo:
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+where email = 'TU_CORREO_REAL';
 ```
 
-Las migraciones `supabase/migrations/0001_initial_schema.sql`, `0002_attendee_payment.sql` y `0003_event_posters_visibility.sql` crean el esquema, el control de pagos, los carteles, la publicación de eventos, índices, restricciones de aforo, control de duplicados, RLS y funciones de limitación de intentos. Ejecuta `supabase db push` para aplicar todas las migraciones pendientes.
+4. Inicia sesión en `/admin` y completa la configuración TOTP.
 
-## 3. Crear el primer administrador
+El rol se guarda en `app_metadata`, nunca en `user_metadata`, porque este último puede ser modificado por el propio usuario.
 
-1. En Supabase abre **Authentication → Users** y crea/invita el usuario administrador con su correo.
-2. Abre **SQL Editor** y ejecuta `supabase/ADMIN_SETUP.sql`, sustituyendo el correo de ejemplo por el correo real del administrador.
-3. Cierra la sesión si estaba abierta y vuelve a entrar desde `https://TU-DOMINIO/admin`.
-4. La primera entrada pedirá configurar TOTP con una app de autenticación. Escanea el QR y confirma el código de seis cifras.
+## 3. Secretos y cifrado
 
-El usuario debe tener `app_metadata.role = admin`. No uses `user_metadata` para el rol, porque el usuario podría modificar sus propios metadatos.
+Los secretos de la aplicación se generan y almacenan en **Supabase Vault**. Las Edge Functions los leen mediante una función SQL restringida al rol interno `service_role`.
 
-## 4. Configurar secretos de las Edge Functions
+Incluyen:
 
-Genera valores aleatorios nuevos. Ejecuta cada comando y guarda las claves de cifrado en un gestor seguro, fuera del repositorio:
+- Clave AES-256-GCM para cifrar documentos.
+- Claves HMAC para detectar documentos duplicados, proteger sesiones y códigos privados.
+- Secreto para autorizar los cierres automáticos.
 
-```bash
-openssl rand -hex 32
-openssl rand -hex 32
-openssl rand -hex 32
-openssl rand -base64 32
-openssl rand -hex 32
-```
+No copies estas claves a GitHub, al navegador ni a archivos públicos. No cambies la clave de cifrado después de almacenar documentos, porque impediría descifrar los datos existentes.
 
-Configura los valores resultantes (cada valor debe ser distinto):
+## 4. Edge Functions y cierres automáticos
 
-```bash
-supabase secrets set \
-  CODE_HASH_SECRET="PEGA_AQUI_EL_PRIMER_HEX" \
-  SESSION_HASH_SECRET="PEGA_AQUI_EL_SEGUNDO_HEX" \
-  DNI_HASH_SECRET="PEGA_AQUI_EL_TERCER_HEX" \
-  DNI_ENCRYPTION_KEY="PEGA_AQUI_EL_BASE64_DE_32_BYTES" \
-  CRON_SECRET="PEGA_AQUI_EL_ULTIMO_HEX" \
-  ALLOWED_ORIGIN="https://TU-DOMINIO"
-```
+Las funciones `admin`, `portal` y `close-due-events` están desplegadas en el proyecto alojado.
 
-`DNI_ENCRYPTION_KEY` debe ser una cadena Base64 que represente exactamente 32 bytes. No la cambies una vez que haya documentos guardados: perderla o sustituirla hará que los DNI y las snapshots antiguas no se puedan descifrar.
+- `admin` valida la sesión de Supabase Auth, el rol de administrador y MFA `aal2`.
+- `portal` valida los códigos privados de grupo y sus sesiones.
+- `close-due-events` valida su secreto propio de cierre.
 
-Si vas a usar la aplicación localmente, puedes añadir el origen local separado por coma, por ejemplo:
+Supabase Cron ejecuta la revisión cada cinco minutos mediante `pg_cron` y `pg_net`. La base de datos impide modificar listas en cuanto vence el plazo, aunque el snapshot oficial automático se genere en la siguiente ejecución.
 
-```text
-ALLOWED_ORIGIN=https://tu-dominio.netlify.app,http://localhost:5173
-```
+## 5. Frontend y publicación
 
-Las Edge Functions necesitan las claves de Supabase que proporciona la plataforma. En proyectos antiguos se expone `SUPABASE_SERVICE_ROLE_KEY`; en la configuración actual puede aparecer como `SUPABASE_SECRET_KEYS`. El código contempla ambos formatos.
+El frontend está conectado al proyecto Supabase online mediante su URL y clave pública `publishable`. Esa clave es pública y tiene permisos limitados por RLS; nunca debe sustituirse por una clave `secret` o `service_role`.
 
-## 5. Desplegar las Edge Functions
+El repositorio incluye `netlify.toml` y una comprobación de compilación en GitHub Actions. Netlify debe compilar con `npm run build` y publicar la carpeta `dist`. Si se configuran variables de entorno en Netlify, pueden sobrescribir `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 
-```bash
-supabase functions deploy portal --no-verify-jwt
-supabase functions deploy admin --no-verify-jwt
-supabase functions deploy close-due-events --no-verify-jwt
-```
-
-Las funciones usan `verify_jwt = false` en `supabase/config.toml` porque `portal` utiliza su propia sesión de grupo y `admin` valida manualmente el JWT, el rol y `aal2`. La función de cierres valida un secreto propio. No elimines esas comprobaciones del código.
-
-## 6. Configurar el frontend en local
-
-Se necesita Node.js 22.12 o posterior (requisito de la versión de Vite incluida). Copia `.env.example` a `.env` y rellena los datos públicos del proyecto:
-
-```env
-VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
-VITE_SUPABASE_ANON_KEY=TU_ANON_O_PUBLISHABLE_KEY
-```
-
-Después:
-
-```bash
-npm install
-npm run dev
-```
-
-- Portal de responsables: `http://localhost:5173/`
-- Administración: `http://localhost:5173/admin`
-
-Para comprobar la versión de producción:
-
-```bash
-npm run build
-npm run preview
-```
-
-## 7. Publicar en Netlify
-
-El repositorio incluye `netlify.toml` para compilar y servir la SPA.
-
-1. Sube el código a un repositorio de GitHub.
-2. En Netlify selecciona **Add new site → Import an existing project** y conecta el repositorio.
-3. Configura estas variables de entorno en Netlify:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-4. Usa `npm run build` como comando y `dist` como directorio de publicación (ya están declarados en `netlify.toml`).
-5. Añade el dominio final a `ALLOWED_ORIGIN` en Supabase y vuelve a desplegar las funciones si has cambiado ese secreto.
-
-## 8. Automatizar el cierre de listas con GitHub Actions
-
-El repositorio contiene `.github/workflows/close-due-events.yml`. En GitHub, abre **Settings → Secrets and variables → Actions** y añade:
-
-- `SUPABASE_URL`: URL del proyecto Supabase.
-- `SUPABASE_ANON_KEY`: clave pública anon del proyecto.
-- `CRON_SECRET`: exactamente el mismo valor configurado como secreto en Supabase.
-
-La tarea intenta cerrar eventos cada cinco minutos y se puede ejecutar manualmente desde **Actions**.
-
-**La hora límite no depende de esta tarea programada.** El portal y la base de datos rechazan las modificaciones en cuanto `deadline_at` ya ha pasado. GitHub Actions revisa los cierres cada cinco minutos, por lo que la creación automática del snapshot oficial puede producirse unos minutos después del bloqueo. El panel de administración también procesa eventos vencidos al cargar el dashboard y permite cerrar manualmente un evento para generar la versión oficial en ese momento.
+No se necesita instalar ni ejecutar Supabase local para mantener el proyecto.
 
 ---
 
