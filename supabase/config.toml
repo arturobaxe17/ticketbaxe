@@ -1,0 +1,13 @@
+project_id = "ticketbaxe"
+
+[api]
+enabled = true
+
+[functions.portal]
+verify_jwt = false
+
+[functions.admin]
+verify_jwt = false
+
+[functions.close-due-events]
+verify_jwt = false
