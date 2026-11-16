@@ -228,6 +228,7 @@ export async function decryptAttendee(row: Record<string, any>): Promise<Record<
     paid: row.paid === true,
     entry_number: row.entry_number ?? null,
     price_paid: row.price_paid ?? null,
+    price_frozen_at: row.price_frozen_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     created_by_type: row.created_by_type,
@@ -286,7 +287,7 @@ export async function storeAttendee(
 
   if (id) {
     const { data: existing, error: existingError } = await db.from('attendees')
-      .select('id, group_id, event_id, full_name, document_type, document_hash, paid, entry_number, price_paid')
+      .select('id, group_id, event_id, full_name, document_type, document_hash, paid, entry_number, price_paid, price_frozen_at')
       .eq('id', id).maybeSingle();
     if (existingError || !existing || existing.group_id !== groupId || existing.event_id !== eventId) {
       throw new HttpError('No puedes modificar este asistente.', 404, 'ATTENDEE_NOT_FOUND');
@@ -309,7 +310,7 @@ export async function storeAttendee(
       updateValues.entry_number = null;
     }
     const { data, error } = await db.from('attendees').update(updateValues)
-      .eq('id', id).select('id, event_id, group_id, full_name, document_type, status, paid, entry_number, price_paid, updated_at').single();
+      .eq('id', id).select('id, event_id, group_id, full_name, document_type, status, paid, entry_number, price_paid, price_frozen_at, updated_at').single();
     if (error) {
       if (error.code === '23505') throw new HttpError('Este DNI/NIE/pasaporte ya está registrado en este evento.', 409, 'DUPLICATE_DOCUMENT');
       if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
@@ -338,7 +339,7 @@ export async function storeAttendee(
     event_id: eventId, group_id: groupId, full_name: fullName, document_type: documentType,
     document_ciphertext: encrypted.ciphertext, document_iv: encrypted.iv, document_hash: hash,
     status, created_by_type: actorType, updated_by_type: actorType,
-  }).select('id, event_id, group_id, full_name, document_type, status, paid, entry_number, price_paid, created_at').single();
+  }).select('id, event_id, group_id, full_name, document_type, status, paid, entry_number, price_paid, price_frozen_at, created_at').single();
   if (error) {
     if (error.code === '23505') throw new HttpError('Este DNI/NIE/pasaporte ya está registrado en este evento.', 409, 'DUPLICATE_DOCUMENT');
     if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
