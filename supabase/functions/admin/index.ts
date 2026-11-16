@@ -63,7 +63,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
-    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
+    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, created_at, updated_at')
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
@@ -461,13 +461,54 @@ Deno.serve(async (req: Request) => {
     if (action === 'set_attendee_paid') {
       const attendeeId = String(body.attendee_id ?? '');
       const paid = body.paid === true;
-      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name, paid, status').eq('id', attendeeId).maybeSingle();
+      const { data: attendee } = await db.from('attendees')
+        .select('id, event_id, group_id, full_name, paid, status, price_paid, entry_number')
+        .eq('id', attendeeId).maybeSingle();
       if (!attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
       if (attendee.status === 'cancelled') throw new HttpError('No se puede marcar el pago de una persona cancelada.');
-      const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
+      if (paid && attendee.price_paid === null) {
+        throw new HttpError('Antes de marcarla como pagada, registra el importe cobrado.');
+      }
+      const { error } = await db.from('attendees').update({ paid, updated_by_type: 'admin' }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
-      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name } });
+      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, price_paid: attendee.price_paid } });
       return json(req, { ok: true, paid });
+    }
+
+    if (action === 'set_attendee_price') {
+      const attendeeId = String(body.attendee_id ?? '');
+      const rawPrice = body.price_paid;
+      let pricePaid: number | null = null;
+      if (rawPrice !== null && rawPrice !== undefined && rawPrice !== '') {
+        if (typeof rawPrice !== 'number' || !Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 99999999.99) {
+          throw new HttpError('Introduce un precio válido en euros.');
+        }
+        const cents = Math.round(rawPrice * 100);
+        if (Math.abs(rawPrice * 100 - cents) > 0.000001) {
+          throw new HttpError('El precio debe tener como máximo dos decimales.');
+        }
+        pricePaid = cents / 100;
+      }
+      const { data: attendee, error: attendeeError } = await db.from('attendees')
+        .select('id, event_id, group_id, full_name, paid, entry_number, price_paid, status')
+        .eq('id', attendeeId).maybeSingle();
+      if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
+      const locked = attendee.paid === true && attendee.entry_number !== null;
+      if (locked && attendee.price_paid !== null && pricePaid !== Number(attendee.price_paid)) {
+        throw new HttpError('El precio queda fijado cuando el pago está confirmado y se asigna el número de entrada.', 409, 'ATTENDEE_PRICE_LOCKED');
+      }
+      const { error: updateError } = await db.from('attendees')
+        .update({ price_paid: pricePaid, updated_by_type: 'admin' }).eq('id', attendeeId);
+      if (updateError?.message?.includes('ATTENDEE_PRICE_LOCKED')) {
+        throw new HttpError('El precio de esta entrada ya está fijado y no se puede modificar.', 409, 'ATTENDEE_PRICE_LOCKED');
+      }
+      if (updateError) throw new HttpError('No se pudo guardar el precio.', 500);
+      await writeAudit(db, {
+        actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
+        action: 'attendee.price_updated',
+        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_price: attendee.price_paid, price_paid: pricePaid },
+      });
+      return json(req, { ok: true, price_paid: pricePaid });
     }
 
     if (action === 'set_attendee_entry_number') {
@@ -480,14 +521,20 @@ Deno.serve(async (req: Request) => {
         throw new HttpError('El número de entrada debe ser un entero positivo.');
       }
       const { data: attendee, error: attendeeError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, entry_number, status')
+        .select('id, event_id, group_id, full_name, entry_number, status, paid, price_paid')
         .eq('id', attendeeId).maybeSingle();
       if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
       if (attendee.status === 'cancelled' && entryNumber !== null) {
         throw new HttpError('No se puede asignar un número de entrada a una persona cancelada.');
       }
+      if (attendee.paid === true && entryNumber !== null && attendee.price_paid === null) {
+        throw new HttpError('Registra primero el precio cobrado antes de asignar el número de entrada.');
+      }
+      if (attendee.paid === true && entryNumber === null) {
+        throw new HttpError('Para retirar el número, marca primero el pago como pendiente.');
+      }
       const { error: updateError } = await db.from('attendees')
-        .update({ entry_number: entryNumber }).eq('id', attendeeId);
+        .update({ entry_number: entryNumber, updated_by_type: 'admin' }).eq('id', attendeeId);
       if (updateError?.code === '23505') {
         throw new HttpError('Ese número ya está asignado a otra persona de este evento.', 409, 'ENTRY_NUMBER_IN_USE');
       }
