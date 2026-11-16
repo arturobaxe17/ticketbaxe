@@ -20,6 +20,7 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - El responsable ve junto al nombre el número de entrada que le haya asignado la organización; no puede modificarlo.
 - Si el responsable modifica el nombre, el tipo de documento o el número de documento de una persona, el sistema retira automáticamente el estado de pagado y el número de entrada. La organización debe revisar los datos y, si corresponde, asignar un nuevo número.
 - El responsable también se puede añadir como asistente; no se cuenta automáticamente por el mero hecho de ser responsable.
+- Las entradas sueltas se guardan en una lista interna independiente y no aparecen en el portal ni en las listas de los grupos.
 - Sesión de portal con caducidad de 12 horas.
 
 ### Administración (`/admin`)
@@ -29,6 +30,8 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
 - Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
 - Asignar, cambiar o retirar el número de entrada de cada asistente. Solo administración puede modificarlo y no se puede repetir dentro del mismo evento.
+- Gestionar una lista independiente de **Entradas sueltas** por evento para personas que solicitan entradas directamente. Solo administración puede crear, editar o cancelar estos registros; no se muestran en ningún portal de grupo.
+- Las entradas sueltas sí cuentan para el aforo y aparecen en los CSV y versiones oficiales.
 - Cualquier cambio posterior de nombre o documento restablece el pago a pendiente y retira el número de entrada mediante un trigger de base de datos.
 - Crear grupos y asignarles uno o varios eventos.
 - Generar, renovar y revocar códigos de grupo. El código completo solo se muestra una vez.
