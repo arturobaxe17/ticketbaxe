@@ -251,7 +251,7 @@ export async function getGroupSession(req: Request, db: SupabaseClient): Promise
     throw new HttpError('El acceso ha caducado. Vuelve a introducir tu identificador.', 401, 'PORTAL_AUTH');
   }
   const { data: group } = await db.from('groups')
-    .select('id, label, responsible_name, contact, active')
+    .select('id, label, responsible_name, rrpp_name, contact, active')
     .eq('id', session.group_id).maybeSingle();
   if (!group?.active) throw new HttpError('Este identificador ha sido desactivado. Contacta con la organización.', 403, 'GROUP_DISABLED');
   return { sessionId: session.id, group };
