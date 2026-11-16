@@ -848,6 +848,44 @@ function AdminApp() {
   </div>;
 }
 
+function AdminPriceEditor({
+  person, value, busy, onChange, onSave,
+}: {
+  person: Attendee;
+  value: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  const priceFixed = isNominativeLocked(person) && person.price_paid !== null && person.price_paid !== undefined;
+  const original = person.price_paid === null || person.price_paid === undefined ? '' : String(person.price_paid);
+  if (priceFixed) {
+    return <div className="price-fixed">
+      <strong>{formatEuro(person.price_paid)}</strong>
+      <small>Fijado</small>
+    </div>;
+  }
+  return <div className="price-editor">
+    <div className="price-input-wrap">
+      <span>€</span>
+      <input
+        className="price-input"
+        aria-label={`Precio cobrado a ${person.full_name}`}
+        type="number" min="0" max="99999999.99" step="0.01" inputMode="decimal"
+        placeholder="0,00" value={value}
+        onChange={event => onChange(event.target.value)}
+        disabled={busy || person.status === 'cancelled'}
+      />
+    </div>
+    <button
+      type="button" className="text-button price-save"
+      onClick={onSave}
+      disabled={busy || person.status === 'cancelled' || value.trim() === original}
+    >Guardar</button>
+    {isNominativeLocked(person) && <small className="price-legacy-note">Completa el importe pendiente para fijarlo</small>}
+  </div>;
+}
+
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-state"><div className="empty-symbol">✦</div><strong>{title}</strong><p>{text}</p></div>;
 }
