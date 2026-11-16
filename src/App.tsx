@@ -6,7 +6,7 @@ import { dateTime, downloadCsv, maskDocument, toIso, toLocalInput } from './lib/
 type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
-  capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean; rrpp_name?: string | null;
+  capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean;
   attendee_count?: number; confirmed_count?: number; pending_count?: number; group_count?: number;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
