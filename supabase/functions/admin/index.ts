@@ -469,7 +469,7 @@ Deno.serve(async (req: Request) => {
       if (paid && attendee.price_paid === null) {
         throw new HttpError('Antes de marcarla como pagada, registra el importe cobrado.');
       }
-      const { error } = await db.from('attendees').update({ paid, updated_by_type: 'admin' }).eq('id', attendeeId);
+      const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, price_paid: attendee.price_paid } });
       return json(req, { ok: true, paid });
@@ -494,11 +494,14 @@ Deno.serve(async (req: Request) => {
         .eq('id', attendeeId).maybeSingle();
       if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
       const locked = attendee.paid === true && attendee.entry_number !== null;
+      if (attendee.paid === true && pricePaid === null) {
+        throw new HttpError('No puedes quitar el importe mientras el pago siga marcado como pagado.');
+      }
       if (locked && attendee.price_paid !== null && pricePaid !== Number(attendee.price_paid)) {
         throw new HttpError('El precio queda fijado cuando el pago está confirmado y se asigna el número de entrada.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
       const { error: updateError } = await db.from('attendees')
-        .update({ price_paid: pricePaid, updated_by_type: 'admin' }).eq('id', attendeeId);
+        .update({ price_paid: pricePaid }).eq('id', attendeeId);
       if (updateError?.message?.includes('ATTENDEE_PRICE_LOCKED')) {
         throw new HttpError('El precio de esta entrada ya está fijado y no se puede modificar.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
@@ -534,7 +537,7 @@ Deno.serve(async (req: Request) => {
         throw new HttpError('Para retirar el número, marca primero el pago como pendiente.');
       }
       const { error: updateError } = await db.from('attendees')
-        .update({ entry_number: entryNumber, updated_by_type: 'admin' }).eq('id', attendeeId);
+        .update({ entry_number: entryNumber }).eq('id', attendeeId);
       if (updateError?.code === '23505') {
         throw new HttpError('Ese número ya está asignado a otra persona de este evento.', 409, 'ENTRY_NUMBER_IN_USE');
       }
