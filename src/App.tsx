@@ -13,7 +13,7 @@ type EventRecord = {
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; name_duplicate?: boolean; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -522,6 +522,7 @@ function AdminApp() {
   async function saveAdminAttendee(event: FormEvent) {
     event.preventDefault(); if (!selectedEvent) return; setBusy(true);
     try {
+      const isLooseEntry = adminAttendeeForm.group_id === selectedEvent.loose_group?.id;
       const result = await adminApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
       setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event);
       const resetMessages = [
@@ -532,7 +533,7 @@ function AdminApp() {
         'success',
         resetMessages.length
           ? `Datos modificados: ${resetMessages.join(' y ')}.`
-          : 'Asistente guardado por administración.',
+          : isLooseEntry ? (adminAttendeeForm.id ? 'Entrada suelta actualizada.' : 'Entrada suelta añadida.') : 'Asistente guardado por administración.',
       );
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -609,7 +610,7 @@ function AdminApp() {
   async function downloadWorkingList() {
     if (!selectedEvent) return;
     const rows = (selectedEvent.attendees ?? []).filter((p: Attendee) => p.status !== 'cancelled').map((person: Attendee) => ({
-      Grupo: selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
+      Grupo: person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
       Nombre: person.full_name, Numero_entrada: person.entry_number ?? '', Tipo_documento: person.document_type, Documento: person.document,
       Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
     }));
@@ -665,11 +666,11 @@ function AdminApp() {
           <button className="button button-danger-light" onClick={() => void cancelEvent()} disabled={selectedEvent.event.status === 'cancelled' || busy}>Cancelar evento</button>
         </div>
         {selectedEvent.event.status !== 'open' && selectedEvent.event.status !== 'cancelled' && <div className="reopen-panel"><div><strong>¿Necesitas abrirlo de nuevo?</strong><p>La versión oficial actual no se modifica. Al cerrar otra vez se generará una versión nueva.</p></div><div className="reopen-controls"><input type="datetime-local" className="input" value={reopenDeadline} onChange={e => setReopenDeadline(e.target.value)} /><button className="button button-light" onClick={() => void reopenEvent()} disabled={busy}>Reabrir evento</button></div></div>}
-        <div className="section-heading"><div><h2>Asistentes registrados</h2><p>Los DNI solo se muestran dentro del panel protegido de administración.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir asistente</button>}</div>
+        <div className="section-heading"><div><h2>Listas de grupo</h2><p>Personas apuntadas por los responsables. Sus datos identificativos solo se muestran aquí.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && selectedEvent.groups.length > 0 && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir a un grupo</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
         {selectedEvent.attendees.some((person: Attendee) => person.name_duplicate) && <div className="duplicate-alert"><strong>⚠ Posibles nombres repetidos detectados</strong><span>Revisa los avisos marcados en la lista y consúltalo con el responsable del grupo. No se bloquean automáticamente porque pueden ser personas distintas con el mismo nombre.</span></div>}
         <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
-          {selectedEvent.attendees.map((person: Attendee) => {
+          {selectedEvent.attendees.filter((person: Attendee) => !person.is_loose).map((person: Attendee) => {
             const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
             const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
             return <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
@@ -696,9 +697,49 @@ function AdminApp() {
               <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
             </tr>;
           })}
-          {selectedEvent.attendees.length === 0 && <tr><td colSpan={7} className="empty-cell">No hay asistentes registrados.</td></tr>}
+          {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={7} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
         </tbody></table></div></div>
-        <div className="section-heading snapshots-heading"><div><h2>Versiones oficiales</h2><p>Cada versión queda congelada y se conserva aunque reabras el evento.</p></div></div>
+        <section className="loose-tickets-section">
+          <div className="section-heading">
+            <div>
+              <h2>Entradas sueltas</h2>
+              <p>Personas que te han pedido entradas directamente. Esta lista solo la gestionas tú.</p>
+            </div>
+            <div className="loose-tickets-heading-actions">
+              <span className="loose-tickets-count">{selectedEvent.attendees.filter((person: Attendee) => person.is_loose && person.status !== 'cancelled').length} activas</span>
+              {selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.loose_group.id }); setShowAdminAttendeeForm(true); }}>＋ Añadir entrada suelta</button>}
+            </div>
+          </div>
+          {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).length === 0
+            ? <div className="loose-empty"><span className="loose-empty-icon">＋</span><div><strong>Aún no hay entradas sueltas</strong><p>Añade aquí a quien te pida una entrada directamente, sin pasar por un grupo.</p></div></div>
+            : <div className="table-card"><div className="table-scroll"><table>
+              <thead><tr><th>Nombre</th><th>N.º entrada</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead>
+              <tbody>
+                {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).map((person: Attendee) => {
+                  const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
+                  const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
+                  return <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
+                    <td><strong>{person.full_name}</strong></td>
+                    <td className="entry-number-cell">
+                      {person.status === 'cancelled'
+                        ? (person.entry_number != null ? <span className="entry-number-badge">N.º {person.entry_number}</span> : '—')
+                        : <div className="entry-number-control">
+                          <input type="number" min="1" max="2147483647" step="1" inputMode="numeric" className="entry-number-input" aria-label={`Número de entrada para ${person.full_name}`} placeholder="—" value={entryDraft} onChange={e => setEntryNumberDrafts(current => ({ ...current, [person.id]: e.target.value }))} />
+                          <button type="button" className="text-button" onClick={() => void saveAttendeeEntryNumber(person)} disabled={busy || entryUnchanged}>
+                            {entryDraft.trim() === '' && person.entry_number != null ? 'Quitar' : person.entry_number == null ? 'Asignar' : 'Guardar'}
+                          </button>
+                        </div>}
+                    </td>
+                    <td><span className="document-type">{person.document_type}</span> {person.document}</td>
+                    <td><StatusPill status={person.status} /></td>
+                    <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy}>{person.paid ? '✓ Pagado' : 'Marcar pagado'}</button> : '—'}</td>
+                    <td className="action-cell">{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table></div></div>}
+        </section>
+                <div className="section-heading snapshots-heading"><div><h2>Versiones oficiales</h2><p>Cada versión queda congelada y se conserva aunque reabras el evento.</p></div></div>
         <div className="snapshot-list">{selectedEvent.snapshots.length === 0 ? <div className="empty-inline">Todavía no se ha generado una lista oficial.</div> : selectedEvent.snapshots.map((snapshot: any) => <div className="snapshot-row" key={snapshot.id}><div className="snapshot-badge">V{snapshot.version}</div><div className="snapshot-meta"><strong>Lista oficial · Versión {snapshot.version}</strong><span>{dateTime(snapshot.created_at)} · {snapshot.attendee_count} personas · {snapshot.confirmed_count} confirmadas · {snapshot.pending_count} pendientes</span></div><div className="snapshot-actions"><button className="button button-light button-small" onClick={() => void downloadSnapshot(snapshot.id)} disabled={busy}>Descargar CSV ↓</button><button className="button button-light button-small" onClick={() => void printSnapshot(snapshot.id)} disabled={busy}>Imprimir / PDF</button></div></div>)}</div>
         <div className="section-heading"><div><h2>Grupos asignados</h2><p>Responsables que pueden gestionar este evento.</p></div></div>
         <div className="group-chip-grid">{selectedEvent.groups.map((g: GroupRecord) => <div className="group-mini-card" key={g.id}><strong>{g.label}</strong><span>{g.responsible_name}</span><small>{g.active ? `Código terminado en ${g.code_last4}` : 'Acceso bloqueado'}</small></div>)}</div>
@@ -731,7 +772,7 @@ function AdminApp() {
 
     {showGroupForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createGroup}><div className="modal-head"><div><span className="eyebrow">RESPONSABLES</span><h2>{groupForm.id ? 'Editar grupo' : 'Crear grupo'}</h2></div><button type="button" className="icon-button" onClick={() => setShowGroupForm(false)}>×</button></div><label className="field-label">Nombre del grupo</label><input className="input" value={groupForm.label} onChange={e => setGroupForm({ ...groupForm, label: e.target.value })} required placeholder="Ej. Grupo Juan" /><label className="field-label">Nombre del responsable</label><input className="input" value={groupForm.responsible_name} onChange={e => setGroupForm({ ...groupForm, responsible_name: e.target.value })} required placeholder="Nombre y apellidos" /><label className="field-label">Contacto (opcional)</label><input className="input" value={groupForm.contact} onChange={e => setGroupForm({ ...groupForm, contact: e.target.value })} placeholder="Teléfono o correo interno" /><label className="field-label">Eventos a los que tendrá acceso</label><div className="checkbox-grid">{events.map(item => <label className="checkbox-option" key={item.id}><input type="checkbox" checked={groupForm.event_ids.includes(item.id)} onChange={e => setGroupForm({ ...groupForm, event_ids: e.target.checked ? [...groupForm.event_ids, item.id] : groupForm.event_ids.filter(id => id !== item.id) })} /><span><strong>{item.name}</strong><small>{dateTime(item.starts_at)}</small></span></label>)}</div>{events.length === 0 && <p className="form-note">Primero debes crear al menos un evento.</p>}<div className="form-note">El identificador se mostrará una sola vez al crear el grupo. Cópialo y entrégaselo al responsable por un canal privado.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowGroupForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy || events.length === 0 || groupForm.event_ids.length === 0}>{busy ? 'Guardando…' : groupForm.id ? 'Guardar cambios' : 'Crear grupo y generar código'}</button></div></form></div>}
 
-    {showAdminAttendeeForm && selectedEvent && <div className="modal-backdrop"><form className="modal-card" onSubmit={saveAdminAttendee}><div className="modal-head"><div><span className="eyebrow">CORRECCIÓN ADMINISTRATIVA</span><h2>{adminAttendeeForm.id ? 'Editar asistente' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowAdminAttendeeForm(false)}>×</button></div><label className="field-label">Grupo responsable</label><select className="input" value={adminAttendeeForm.group_id} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, group_id: e.target.value })} required>{selectedEvent.groups.map((g: GroupRecord) => <option key={g.id} value={g.id}>{g.label} — {g.responsible_name}</option>)}</select><label className="field-label">Nombre y apellidos</label><input className="input" value={adminAttendeeForm.full_name} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, full_name: e.target.value })} required /><div className="form-two"><div><label className="field-label">Tipo</label><select className="input" value={adminAttendeeForm.document_type} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Documento</label><input className="input" value={adminAttendeeForm.document} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document: e.target.value.toUpperCase() })} required /></div></div><label className="field-label">Estado</label><select className="input" value={adminAttendeeForm.status} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, status: e.target.value as 'confirmed' | 'pending' })}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option></select><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowAdminAttendeeForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : adminAttendeeForm.id ? 'Guardar cambios' : 'Guardar'}</button></div></form></div>}
+    {showAdminAttendeeForm && selectedEvent && <div className="modal-backdrop"><form className="modal-card" onSubmit={saveAdminAttendee}><div className="modal-head"><div><span className="eyebrow">{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'ENTRADAS SUELTAS' : 'CORRECCIÓN ADMINISTRATIVA'}</span><h2>{adminAttendeeForm.id ? 'Editar asistente' : adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'Añadir entrada suelta' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowAdminAttendeeForm(false)}>×</button></div>{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? <div className="loose-admin-note"><strong>Entrada suelta</strong><span>No aparecerá en el acceso de ningún grupo. Solo la puedes gestionar desde administración.</span></div> : <><label className="field-label">Grupo responsable</label><select className="input" value={adminAttendeeForm.group_id} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, group_id: e.target.value })} required>{selectedEvent.groups.map((g: GroupRecord) => <option key={g.id} value={g.id}>{g.label} — {g.responsible_name}</option>)}</select></>}<label className="field-label">Nombre y apellidos</label><input className="input" value={adminAttendeeForm.full_name} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, full_name: e.target.value })} required /><div className="form-two"><div><label className="field-label">Tipo</label><select className="input" value={adminAttendeeForm.document_type} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Documento</label><input className="input" value={adminAttendeeForm.document} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document: e.target.value.toUpperCase() })} required /></div></div><label className="field-label">Estado</label><select className="input" value={adminAttendeeForm.status} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, status: e.target.value as 'confirmed' | 'pending' })}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option></select><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowAdminAttendeeForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : adminAttendeeForm.id ? 'Guardar cambios' : 'Guardar'}</button></div></form></div>}
 
     {newCode && <div className="modal-backdrop"><div className="modal-card code-card"><button type="button" className="icon-button modal-corner" onClick={() => setNewCode('')}>×</button><div className="success-emblem">✓</div><span className="eyebrow">IDENTIFICADOR GENERADO</span><h2>{newCodeGroupLabel}</h2><p>Entrega este código al responsable por un canal privado. No volverá a mostrarse completo.</p><div className="generated-code">{newCode}</div><button className="button button-primary button-full" onClick={() => { void navigator.clipboard.writeText(newCode); notify('success', 'Identificador copiado.'); }}>Copiar identificador</button><button className="text-button code-close" onClick={() => setNewCode('')}>Ya lo he guardado</button></div></div>}
   </div>;
