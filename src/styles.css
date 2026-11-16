@@ -637,3 +637,30 @@ body, html { background: var(--paper); color: var(--ink); }
   .admin-auth-card h1 { font-size: 28px; }
   .admin-auth-top .back-link { font-size: 9px; }
 }
+
+/* Nuevo formulario de administración sin contenedor tipo tarjeta. */
+.admin-auth-content { width: min(100% - 36px, 490px); margin: auto; padding: 54px 0; }
+.admin-auth-form {
+  width: 100%; padding: 26px 0 22px; margin: 0;
+  background: transparent; border: 0; border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--line-dark); border-radius: 0; box-shadow: none;
+}
+.admin-auth-form .eyebrow { margin-bottom: 13px; color: var(--accent-dark); }
+.admin-auth-form h1 { margin: 0 0 9px; color: var(--ink); font: 800 34px/1.08 Arial,sans-serif; letter-spacing: -.04em; }
+.admin-auth-form p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.admin-auth-form .stack-form { margin-top: 22px; }
+.admin-auth-form .stack-form .field-label { margin: 15px 0 7px; }
+.admin-auth-form .stack-form .button { width: 100%; margin-top: 20px; min-height: 46px; }
+.admin-auth-form .input { border-radius: 3px; }
+.admin-auth-form .input-totp { font-size: 22px; }
+.admin-auth-form .text-button { margin-top: 14px; }
+.admin-auth-form .auth-bottom {
+  margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line);
+  color: var(--muted); font: 400 10px Arial,sans-serif; text-align: left;
+}
+.admin-auth-form .notice { margin-top: 18px; }
+@media(max-width:560px) {
+  .admin-auth-content { width: calc(100% - 36px); padding: 34px 0; }
+  .admin-auth-form { padding: 22px 0 18px; }
+  .admin-auth-form h1 { font-size: 29px; }
+}
