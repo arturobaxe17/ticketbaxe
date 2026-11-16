@@ -208,26 +208,59 @@ function PortalApp() {
     <main className={`main-wrap ${group ? 'portal-main' : 'portal-public-main'}`}>
       <NoticeBar notice={notice} clear={() => setNotice(null)} />
       {loading && !group && <div className="loading-panel"><div className="spinner" />Comprobando acceso…</div>}
-      {!token && !loading && <section className="login-layout">
-        <div className="login-copy">
-          <span className="eyebrow">ENTRAR</span>
-          <h1>Accede a la lista de tu grupo.</h1>
-          <p>Introduce el código NAV que te han facilitado para consultar y actualizar la lista de tu grupo.</p>
-        </div>
-        <form className="login-card" onSubmit={handleLogin}>
-          <div className="login-card-heading">
-            <h2>Código de acceso</h2>
-            <p>Escríbelo tal y como lo has recibido.</p>
-          </div>
-          <div className="login-entry">
-            <div>
-              <label className="field-label" htmlFor="group-code">Código del grupo</label>
-              <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="NAV-XXXXX" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
+      {!token && !loading && <section className="access-hero">
+        <div className="access-copy">
+          <div className="access-eyebrow"><span className="access-live-dot" /> ACCESO DE GRUPO</div>
+          <h1>Tu grupo<br /><em>te espera.</em></h1>
+          <p>Introduce el código que te han facilitado y entra para consultar o actualizar la lista.</p>
+          <form className="access-login-form" onSubmit={handleLogin}>
+            <div className="access-form-heading">
+              <span className="access-form-symbol">#</span>
+              <div><strong>Entra con tu código</strong><small>Escríbelo tal y como lo has recibido.</small></div>
             </div>
-            <button className="button button-primary" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Continuar'}</button>
+            <label htmlFor="group-code">Código de acceso</label>
+            <input
+              id="group-code"
+              className="access-code-input"
+              autoComplete="off"
+              autoCapitalize="characters"
+              placeholder="NAV-XXXXX"
+              value={loginCode}
+              onChange={e => setLoginCode(e.target.value.toUpperCase())}
+              required
+            />
+            <button className="access-submit" disabled={loading || loginCode.trim().length < 8}>
+              <span>{loading ? 'Entrando…' : 'Continuar'}</span><b aria-hidden="true">↗</b>
+            </button>
+            <div className="access-help">¿No tienes el código? Pídeselo a la persona que lleva tu grupo.</div>
+          </form>
+        </div>
+        <div className="access-art" aria-hidden="true">
+          <div className="access-art-grid" />
+          <div className="access-orbit access-orbit-one" />
+          <div className="access-orbit access-orbit-two" />
+          <div className="access-spark access-spark-one">✳</div>
+          <div className="access-spark access-spark-two">✦</div>
+          <div className="access-sticker"><span>ENTRADA</span><strong>01</strong></div>
+          <div className="access-ticket">
+            <div className="access-ticket-top">
+              <div className="access-ticket-brand"><span className="access-ticket-mark">B</span><strong>TICKETBAXE</strong></div>
+              <span className="access-ticket-kind">PASE DE GRUPO</span>
+            </div>
+            <div className="access-ticket-main">
+              <span className="access-ticket-overline">TU ACCESO</span>
+              <strong>ESTÁS<br /><em>DENTRO.</em></strong>
+              <span className="access-ticket-caption">Tu lista, tus personas, tu evento.</span>
+            </div>
+            <div className="access-ticket-perforation"><span /><span /></div>
+            <div className="access-ticket-bottom">
+              <div><small>CÓDIGO DE ACCESO</small><strong>NAV-XXXXX</strong></div>
+              <div className="access-barcode"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
+            </div>
+            <div className="access-ticket-serial">TBX · ACCESO PRIVADO <span>01 / 01</span></div>
           </div>
-          <div className="login-foot">¿No tienes el código? Pídeselo a la persona que lleva tu grupo.</div>
-        </form>
+          <div className="access-floating-note"><span className="access-note-check">✓</span><span><strong>Tu grupo</strong><small>está a un paso</small></span></div>
+        </div>
       </section>}
 
       {token && group && !selectedEvent && <>
