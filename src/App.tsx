@@ -20,6 +20,23 @@ type GroupRecord = {
   code_last4: string; event_ids: string[]; created_at: string;
 };
 
+const PORTAL_SESSION_KEY = 'ticketbaxe_portal_session';
+const LEGACY_PORTAL_SESSION_KEY = 'navidad_portal_token';
+
+function readPortalSession(): string | null {
+  const current = sessionStorage.getItem(PORTAL_SESSION_KEY);
+  const legacy = sessionStorage.getItem(LEGACY_PORTAL_SESSION_KEY);
+  const token = current ?? legacy;
+  if (token && !current) sessionStorage.setItem(PORTAL_SESSION_KEY, token);
+  if (legacy) sessionStorage.removeItem(LEGACY_PORTAL_SESSION_KEY);
+  return token;
+}
+
+function clearPortalSession(): void {
+  sessionStorage.removeItem(PORTAL_SESSION_KEY);
+  sessionStorage.removeItem(LEGACY_PORTAL_SESSION_KEY);
+}
+
 const emptyAttendee: AttendeeForm = { id: '', full_name: '', document_type: 'DNI', document: '', status: 'confirmed' };
 
 function App() {
@@ -61,7 +78,7 @@ function NoticeBar({ notice, clear }: { notice: Notice; clear: () => void }) {
 }
 
 function PortalApp() {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('navidad_portal_token'));
+  const [token, setToken] = useState<string | null>(() => readPortalSession());
   const [group, setGroup] = useState<any>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null);
@@ -82,7 +99,7 @@ function PortalApp() {
       setGroup(response.group);
       setEvents(response.events ?? []);
     } catch (error) {
-      sessionStorage.removeItem('navidad_portal_token');
+      clearPortalSession();
       setToken(null); setGroup(null); setEvents([]);
       notify('error', (error as Error).message);
     } finally { setLoading(false); }
@@ -94,7 +111,7 @@ function PortalApp() {
     event.preventDefault(); setLoading(true); setNotice(null);
     try {
       const response = await portalApi<{ token: string; group: any }>('login', { code: loginCode.trim() });
-      sessionStorage.setItem('navidad_portal_token', response.token);
+      sessionStorage.setItem(PORTAL_SESSION_KEY, response.token);
       setToken(response.token); setGroup(response.group);
       await loadPortal(response.token);
       setLoginCode('');
@@ -645,7 +662,7 @@ function AdminApp() {
           </button>)}</div>}
         </>}
         {tab === 'groups' && <>
-          <div className="section-heading"><div><h2>Grupos</h2><p>Personas que pueden entrar y modificar su lista.</p></p></div><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); }}>＋ Crear grupo</button></div>
+          <div className="section-heading"><div><h2>Grupos</h2><p>Personas que pueden entrar y modificar su lista.</p></div><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); }}>＋ Crear grupo</button></div>
           {groups.length === 0 ? <EmptyState title="No hay grupos creados" text="Crea un grupo, asígnale eventos y entrega su identificador al responsable." /> : <div className="group-list">{groups.map(group => <div className="group-row" key={group.id}><div className="group-avatar">{group.label.slice(0, 1).toUpperCase()}</div><div className="group-row-info"><strong>{group.label}</strong><span>{group.responsible_name}{group.contact ? ` · ${group.contact}` : ''}</span><small>Código terminado en {group.code_last4} · {group.event_ids.length} eventos asignados</small></div><span className={`group-active ${group.active ? 'is-active' : 'is-disabled'}`}>{group.active ? 'Activo' : 'Bloqueado'}</span><div className="row-actions"><button className="text-button" onClick={() => editGroup(group)}>Editar</button><button className="text-button" onClick={() => void regenerateCode(group)}>Renovar código</button><button className="text-button" onClick={() => void toggleGroup(group)}>{group.active ? 'Bloquear' : 'Activar'}</button></div></div>)}</div>}
         </>}
         {tab === 'audit' && <>
@@ -654,7 +671,7 @@ function AdminApp() {
         </>}
       </>}
     </main>
-    <footer className="footer"><span>© {new Date().getFullYear()} · TicketBaxe</span><span>Acceso verificado por correo · Datos cifrados</span></footer>
+    <footer className="footer"><span>TicketBaxe</span><span>© {new Date().getFullYear()}</span></footer>
 
     {showEventForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createOrUpdateEvent}><div className="modal-head"><div><span className="eyebrow">CALENDARIO</span><h2>{eventForm.id ? 'Editar evento' : 'Crear evento'}</h2></div><button type="button" className="icon-button" onClick={() => setShowEventForm(false)}>×</button></div><label className="field-label">Nombre del evento</label><input className="input" value={eventForm.name} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} required maxLength={120} placeholder="Ej. Concierto · 19 de diciembre" /><label className="field-label">Descripción (opcional)</label><textarea className="input textarea" value={eventForm.description} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} maxLength={800} placeholder="Información adicional para los responsables" /><div className="form-two"><div><label className="field-label">Fecha y hora del evento</label><input className="input" type="datetime-local" value={eventForm.starts_at} onChange={e => setEventForm({ ...eventForm, starts_at: e.target.value })} required /></div><div><label className="field-label">Límite para modificar listas</label><input className="input" type="datetime-local" value={eventForm.deadline_at} onChange={e => setEventForm({ ...eventForm, deadline_at: e.target.value })} required /></div></div><label className="field-label">Aforo máximo (opcional)</label><input className="input" type="number" min="1" max="100000" value={eventForm.capacity} onChange={e => setEventForm({ ...eventForm, capacity: e.target.value })} placeholder="Dejar vacío si no hay límite" /><label className="field-label">Cartel del evento (JPG, PNG o WEBP · máximo 5 MB)</label><input className="input" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPosterFile(e.target.files?.[0] ?? null)} />{eventForm.poster_url && !posterFile && <div className="poster-current"><img src={eventForm.poster_url} alt="Cartel actual" /><span>Cartel actual guardado</span></div>}<label className="checkbox-option publish-option"><input type="checkbox" checked={eventForm.is_published} onChange={e => setEventForm({ ...eventForm, is_published: e.target.checked })} /><span><strong>Evento visible para los responsables</strong><small>Desmarca para ocultarlo sin eliminarlo ni perder sus listas.</small></span></label><div className="form-note">La hora se interpreta en la zona horaria del navegador (España peninsular). El servidor bloqueará las modificaciones al llegar al límite.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowEventForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : eventForm.id ? 'Guardar cambios' : 'Guardar evento'}</button></div></form></div>}
 
