@@ -207,6 +207,10 @@ function PortalApp() {
     </header>
     <main className={`main-wrap ${group ? 'portal-main' : 'portal-public-main'}`}>
       <NoticeBar notice={notice} clear={() => setNotice(null)} />
+      {token && group && <div className="group-duty-note">
+        <span className="group-duty-icon" aria-hidden="true">i</span>
+        <p><strong>Tu función:</strong> mantener al día la lista de tu grupo. La organización se encarga de la venta y el cobro de las entradas.</p>
+      </div>}
       {loading && !group && <div className="loading-panel"><div className="spinner" />Comprobando acceso…</div>}
       {!token && !loading && <section className="access-hero">
         <div className="access-copy">
