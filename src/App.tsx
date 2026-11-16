@@ -13,7 +13,7 @@ type EventRecord = {
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -146,15 +146,19 @@ function PortalApp() {
     if (!selectedEvent || !token) return;
     setSaving(true); setNotice(null);
     try {
-      const result = await portalApi<{ attendee: { payment_reset?: boolean } }>('save_attendee', {
+      const result = await portalApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', {
         event_id: selectedEvent.id,
         attendee: { ...form, id: form.id || undefined },
       }, token);
       setShowForm(false); await refreshSelected();
+      const resetMessages = [
+        result.attendee?.payment_reset ? 'el pago vuelve a estar pendiente' : '',
+        result.attendee?.entry_number_reset ? 'el número de entrada anterior se ha retirado' : '',
+      ].filter(Boolean);
       notify(
         'success',
-        result.attendee?.payment_reset
-          ? 'Datos modificados: el pago vuelve a estar pendiente y la organización debe comprobarlo de nuevo.'
+        resetMessages.length
+          ? `Datos modificados: ${resetMessages.join(' y ')}. La organización debe revisarlos de nuevo.`
           : form.id ? 'Asistente actualizado.' : 'Asistente añadido a tu lista.',
       );
     } catch (error) { notify('error', (error as Error).message); }
@@ -208,7 +212,7 @@ function PortalApp() {
         <div className="login-copy">
           <span className="eyebrow">ENTRAR</span>
           <h1>Accede a la lista de tu grupo.</h1>
-          <p>Introduce el código que te han facilitado para consultar los eventos y actualizar la lista.</p>
+          <p>Introduce el código NAV que te han facilitado para consultar y actualizar la lista de tu grupo.</p>
         </div>
         <form className="login-card" onSubmit={handleLogin}>
           <div className="login-card-heading">
@@ -218,7 +222,7 @@ function PortalApp() {
           <div className="login-entry">
             <div>
               <label className="field-label" htmlFor="group-code">Código del grupo</label>
-              <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="Introduce tu código" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
+              <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="NAV-XXXXX" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
             </div>
             <button className="button button-primary" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Continuar'}</button>
           </div>
@@ -246,7 +250,7 @@ function PortalApp() {
         {!selectedEvent.editable && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
         <div className="section-heading attendee-heading"><div><h2>Personas de tu grupo</h2><p>Cada persona activa cuenta como una entrada. Añade también al responsable si va a asistir.</p></div>{selectedEvent.editable && <button className="button button-primary" onClick={startNew}>＋ Añadir asistente</button>}</div>
         {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
-          {attendees.map(person => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td>{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td><td className="action-cell">{selectedEvent.editable && <div className="row-actions"><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button>}</div>}</td></tr>)}
+          {attendees.map(person => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td><strong>{person.full_name}</strong>{person.entry_number != null && <span className="entry-number-badge">N.º {person.entry_number}</span>}</td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td>{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td><td className="action-cell">{selectedEvent.editable && <div className="row-actions"><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button>}</div>}</td></tr>)}
         </tbody></table></div><div className="table-foot">Los datos se guardan en el servidor. Las personas canceladas se conservan en el historial, pero no cuentan como entrada.</div></div>}
       </>}
     </main>
@@ -275,6 +279,7 @@ function AdminApp() {
   const [events, setEvents] = useState<EventRecord[]>([]); const [activeGroups, setActiveGroups] = useState(0);
   const [groups, setGroups] = useState<GroupRecord[]>([]); const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [entryNumberDrafts, setEntryNumberDrafts] = useState<Record<string, string>>({});
   const [showEventForm, setShowEventForm] = useState(false); const [showGroupForm, setShowGroupForm] = useState(false);
   const [showAdminAttendeeForm, setShowAdminAttendeeForm] = useState(false); const [adminAttendeeForm, setAdminAttendeeForm] = useState<AttendeeForm & { group_id: string }>({ ...emptyAttendee, group_id: '' });
   const [newCode, setNewCode] = useState(''); const [newCodeGroupLabel, setNewCodeGroupLabel] = useState('');
@@ -396,6 +401,7 @@ function AdminApp() {
   useEffect(() => { if (authStage === 'app') { if (tab === 'dashboard') void loadDashboard(); if (tab === 'groups') void loadGroups(); if (tab === 'audit') void loadAudit(); } }, [authStage, tab]);
 
   async function openAdminEvent(item: EventRecord) {
+    setEntryNumberDrafts({});
     setBusy(true);
     try { const data = await adminApi<any>('event_detail', { event_id: item.id }); setSelectedEvent(data); setReopenDeadline(toLocalInput(new Date(Date.now() + 60 * 60 * 1000).toISOString())); }
     catch (error) { notify('error', (error as Error).message); }
@@ -516,12 +522,16 @@ function AdminApp() {
   async function saveAdminAttendee(event: FormEvent) {
     event.preventDefault(); if (!selectedEvent) return; setBusy(true);
     try {
-      const result = await adminApi<{ attendee: { payment_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
+      const result = await adminApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
       setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event);
+      const resetMessages = [
+        result.attendee?.payment_reset ? 'el pago vuelve a estar pendiente' : '',
+        result.attendee?.entry_number_reset ? 'el número de entrada anterior se ha retirado' : '',
+      ].filter(Boolean);
       notify(
         'success',
-        result.attendee?.payment_reset
-          ? 'Datos modificados: el pago vuelve a estar pendiente.'
+        resetMessages.length
+          ? `Datos modificados: ${resetMessages.join(' y ')}.`
           : 'Asistente guardado por administración.',
       );
     } catch (error) { notify('error', (error as Error).message); }
@@ -535,6 +545,24 @@ function AdminApp() {
       await adminApi('set_attendee_paid', { attendee_id: person.id, paid: !person.paid });
       await openAdminEvent(selectedEvent.event);
       notify('success', person.paid ? 'Pago marcado como pendiente.' : 'Asistente marcado como pagado.');
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function saveAttendeeEntryNumber(person: Attendee) {
+    if (!selectedEvent) return;
+    const raw = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
+    const trimmed = raw.trim();
+    const entryNumber = trimmed === '' ? null : Number(trimmed);
+    if (entryNumber !== null && (!Number.isSafeInteger(entryNumber) || entryNumber < 1 || entryNumber > 2147483647)) {
+      notify('error', 'Introduce un número entero positivo.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await adminApi('set_attendee_entry_number', { attendee_id: person.id, entry_number: entryNumber });
+      await openAdminEvent(selectedEvent.event);
+      notify('success', entryNumber === null ? 'Número de entrada retirado.' : `Entrada número ${entryNumber} asignada a ${person.full_name}.`);
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
   }
@@ -554,7 +582,7 @@ function AdminApp() {
       const snapshot = result.snapshot;
       const rows = (snapshot.records ?? []).map((person: any) => ({
         Evento: snapshot.event?.name ?? '', Responsable: person.group_label, Nombre: person.full_name,
-        Tipo_documento: person.document_type, Documento: person.document,
+        Numero_entrada: person.entry_number ?? '', Tipo_documento: person.document_type, Documento: person.document,
         Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
       }));
       downloadCsv(`${(snapshot.event?.name ?? 'evento').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-oficial-v${snapshot.version}.csv`, rows);
@@ -570,9 +598,9 @@ function AdminApp() {
       const result = await adminApi<{ snapshot: any }>('download_snapshot', { snapshot_id: snapshotId });
       const snapshot = result.snapshot;
       const escape = (value: unknown) => { const replacements: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }; return String(value ?? '').replace(/[&<>"']/g, char => replacements[char] ?? char); };
-      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
+      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${person.entry_number ?? '—'}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
       printWindow.onload = () => printWindow.print();
-      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>Tipo</th><th>Documento</th><th>Estado</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
+      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>N.º entrada</th><th>Tipo</th><th>Documento</th><th>Estado</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
       printWindow.document.close();
     } catch (error) { printWindow.close(); notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -582,7 +610,7 @@ function AdminApp() {
     if (!selectedEvent) return;
     const rows = (selectedEvent.attendees ?? []).filter((p: Attendee) => p.status !== 'cancelled').map((person: Attendee) => ({
       Grupo: selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
-      Nombre: person.full_name, Tipo_documento: person.document_type, Documento: person.document,
+      Nombre: person.full_name, Numero_entrada: person.entry_number ?? '', Tipo_documento: person.document_type, Documento: person.document,
       Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
     }));
     if (!rows.length) { notify('info', 'No hay asistentes activos para exportar.'); return; }
@@ -640,9 +668,35 @@ function AdminApp() {
         <div className="section-heading"><div><h2>Asistentes registrados</h2><p>Los DNI solo se muestran dentro del panel protegido de administración.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir asistente</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
         {selectedEvent.attendees.some((person: Attendee) => person.name_duplicate) && <div className="duplicate-alert"><strong>⚠ Posibles nombres repetidos detectados</strong><span>Revisa los avisos marcados en la lista y consúltalo con el responsable del grupo. No se bloquean automáticamente porque pueden ser personas distintas con el mismo nombre.</span></div>}
-        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
-          {selectedEvent.attendees.map((person: Attendee) => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}><td>{selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '—'}</td><td><strong>{person.full_name}</strong></td><td><span className="document-type">{person.document_type}</span> {person.document}</td><td><StatusPill status={person.status} /></td><td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy}>{person.paid ? '✓ Pagado' : 'Marcar pagado'}</button> : '—'}</td><td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td></tr>)}
-          {selectedEvent.attendees.length === 0 && <tr><td colSpan={6} className="empty-cell">No hay asistentes registrados.</td></tr>}
+        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+          {selectedEvent.attendees.map((person: Attendee) => {
+            const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
+            const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
+            return <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
+              <td>{selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '—'}</td>
+              <td><strong>{person.full_name}</strong></td>
+              <td className="entry-number-cell">
+                {person.status === 'cancelled'
+                  ? (person.entry_number != null ? <span className="entry-number-badge">N.º {person.entry_number}</span> : '—')
+                  : <div className="entry-number-control">
+                    <input
+                      type="number" min="1" max="2147483647" step="1" inputMode="numeric"
+                      className="entry-number-input" aria-label={`Número de entrada para ${person.full_name}`}
+                      placeholder="—" value={entryDraft}
+                      onChange={e => setEntryNumberDrafts(current => ({ ...current, [person.id]: e.target.value }))}
+                    />
+                    <button type="button" className="text-button" onClick={() => void saveAttendeeEntryNumber(person)} disabled={busy || entryUnchanged}>
+                      {entryDraft.trim() === '' && person.entry_number != null ? 'Quitar' : person.entry_number == null ? 'Asignar' : 'Guardar'}
+                    </button>
+                  </div>}
+              </td>
+              <td><span className="document-type">{person.document_type}</span> {person.document}</td>
+              <td><StatusPill status={person.status} /></td>
+              <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy}>{person.paid ? '✓ Pagado' : 'Marcar pagado'}</button> : '—'}</td>
+              <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
+            </tr>;
+          })}
+          {selectedEvent.attendees.length === 0 && <tr><td colSpan={7} className="empty-cell">No hay asistentes registrados.</td></tr>}
         </tbody></table></div></div>
         <div className="section-heading snapshots-heading"><div><h2>Versiones oficiales</h2><p>Cada versión queda congelada y se conserva aunque reabras el evento.</p></div></div>
         <div className="snapshot-list">{selectedEvent.snapshots.length === 0 ? <div className="empty-inline">Todavía no se ha generado una lista oficial.</div> : selectedEvent.snapshots.map((snapshot: any) => <div className="snapshot-row" key={snapshot.id}><div className="snapshot-badge">V{snapshot.version}</div><div className="snapshot-meta"><strong>Lista oficial · Versión {snapshot.version}</strong><span>{dateTime(snapshot.created_at)} · {snapshot.attendee_count} personas · {snapshot.confirmed_count} confirmadas · {snapshot.pending_count} pendientes</span></div><div className="snapshot-actions"><button className="button button-light button-small" onClick={() => void downloadSnapshot(snapshot.id)} disabled={busy}>Descargar CSV ↓</button><button className="button button-light button-small" onClick={() => void printSnapshot(snapshot.id)} disabled={busy}>Imprimir / PDF</button></div></div>)}</div>
