@@ -2467,3 +2467,214 @@ body, html { background: var(--paper); color: var(--ink); }
     line-height: 1.45;
   }
 }
+
+
+
+/* Precios por asistente y bloqueo nominativo. */
+.price-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 112px;
+}
+.price-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 0 7px;
+  background: #fffefa;
+  border: 1px solid var(--line-dark);
+  border-radius: 3px;
+}
+.price-input-wrap > span {
+  color: #7e877d;
+  font: 600 10px 'DM Mono',monospace;
+}
+.price-input {
+  width: 75px;
+  min-width: 64px;
+  padding: 5px 1px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: 600 10px 'DM Mono',monospace;
+}
+.price-input:focus { outline: none; }
+.price-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(206,89,59,.12);
+}
+.price-save {
+  padding: 3px 5px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.price-fixed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 80px;
+}
+.price-fixed strong {
+  color: #2f6e4c;
+  font: 700 11px 'DM Mono',monospace;
+  white-space: nowrap;
+}
+.price-fixed small {
+  color: #788478;
+  font: 600 8px 'DM Mono',monospace;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.price-legacy-note {
+  flex-basis: 100%;
+  color: #8b683a;
+  font-size: 8px;
+  line-height: 1.35;
+}
+.nominative-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  color: #865a2d;
+  background: #f7eddc;
+  border: 1px solid #ead9b9;
+  border-radius: 4px;
+  font: 700 8px 'DM Mono',monospace;
+  white-space: nowrap;
+}
+.admin-nominative-badge {
+  margin-top: 5px;
+}
+.nominative-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0 0 19px;
+  padding: 13px 15px;
+  color: #6f542c;
+  background: #faf1df;
+  border: 1px solid #ead8b6;
+  border-left: 4px solid #d49a51;
+  border-radius: 7px;
+}
+.nominative-banner > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  color: #fff;
+  background: #c28a46;
+  border-radius: 50%;
+  font-size: 13px;
+}
+.nominative-banner strong {
+  display: block;
+  color: #6c4d24;
+  font: 700 11px Arial,sans-serif;
+}
+.nominative-banner p {
+  margin: 3px 0 0;
+  color: #806b4b;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+/* Apartado público de información: condiciones explicadas sin letra pequeña escondida. */
+.portal-public .access-policy {
+  width: min(100%, 1080px);
+  margin: 26px auto 10px;
+  padding: 29px 34px 21px;
+  color: #26332a;
+  background: #fbf8f0;
+  border: 1px solid #e5dfd2;
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(29,40,32,.045);
+}
+.access-policy-heading > span {
+  color: #c85c40;
+  font: 700 8px 'DM Mono',monospace;
+  letter-spacing: .16em;
+}
+.access-policy-heading h2 {
+  margin: 8px 0 6px;
+  color: #253229;
+  font: 800 clamp(21px,2.3vw,27px)/1.1 Arial,sans-serif;
+  letter-spacing: -.04em;
+}
+.access-policy-heading p {
+  margin: 0;
+  color: #7a8379;
+  font-size: 11px;
+}
+.access-policy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+  margin-top: 21px;
+}
+.access-policy-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr);
+  gap: 12px;
+  padding: 17px 17px 16px;
+  background: #f4f0e6;
+  border: 1px solid #e8e1d4;
+  border-radius: 8px;
+}
+.access-policy-number {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  color: #fff8ef;
+  background: #e96d4e;
+  border-radius: 50%;
+  font: 700 9px 'DM Mono',monospace;
+}
+.access-policy-card h3 {
+  margin: 2px 0 7px;
+  color: #2b382e;
+  font: 800 13px Arial,sans-serif;
+}
+.access-policy-card p {
+  margin: 0;
+  color: #727c72;
+  font-size: 10px;
+  line-height: 1.65;
+}
+.access-policy-foot {
+  margin: 17px 0 0;
+  padding-top: 13px;
+  color: #93988e;
+  border-top: 1px solid #e8e2d6;
+  font-size: 9px;
+  line-height: 1.55;
+}
+@media(max-width:760px) {
+  .portal-public .access-policy {
+    margin-top: 17px;
+    padding: 21px 17px 16px;
+    border-radius: 9px;
+  }
+  .access-policy-grid { grid-template-columns: 1fr; gap: 9px; margin-top: 16px; }
+  .access-policy-card { padding: 14px; grid-template-columns: 27px minmax(0,1fr); gap: 9px; }
+  .access-policy-number { width: 25px; height: 25px; font-size: 8px; }
+  .access-policy-card h3 { font-size: 12px; }
+  .access-policy-card p { font-size: 9px; }
+  .access-policy-foot { font-size: 8px; }
+}
+@media(max-width:520px) {
+  .price-editor { min-width: 0; gap: 3px; }
+  .price-input-wrap { min-height: 29px; padding: 0 5px; }
+  .price-input { width: 62px; min-width: 52px; font-size: 9px; }
+  .price-save { font-size: 8px; }
+  .nominative-banner { padding: 10px 11px; gap: 8px; }
+  .nominative-banner p { font-size: 9px; }
+}
