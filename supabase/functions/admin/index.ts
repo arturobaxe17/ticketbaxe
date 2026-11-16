@@ -291,7 +291,8 @@ Deno.serve(async (req: Request) => {
       const capacity = body.capacity === '' || body.capacity == null ? null : Number(body.capacity);
       if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 100000)) throw new HttpError('El aforo debe ser un número entero positivo.');
       const { data: event, error } = await db.from('events').insert({
-        name, description: typeof body.description === 'string' ? body.description.slice(0, 800) : '',
+        name, rrpp_name: typeof body.rrpp_name === 'string' ? body.rrpp_name.trim().slice(0, 120) || null : null,
+        description: typeof body.description === 'string' ? body.description.slice(0, 800) : '',
         starts_at: startsAt, deadline_at: deadlineAt, capacity, created_by: admin.id,
         is_published: body.is_published !== false, poster_url: typeof body.poster_url === 'string' ? body.poster_url.slice(0, 1000) : null,
       }).select('*').single();
@@ -304,6 +305,10 @@ Deno.serve(async (req: Request) => {
       const eventId = String(body.event_id ?? '');
       const update: Record<string, unknown> = {};
       if (typeof body.name === 'string') update.name = assertString(body.name, 'El nombre', 120);
+      if (typeof body.rrpp_name === 'string' || body.rrpp_name === null) {
+        const rrppName = typeof body.rrpp_name === 'string' ? body.rrpp_name.trim().slice(0, 120) : '';
+        update.rrpp_name = rrppName || null;
+      }
       if (typeof body.description === 'string') update.description = body.description.slice(0, 800);
       if (typeof body.is_published === 'boolean') update.is_published = body.is_published;
       if (body.poster_url === null || typeof body.poster_url === 'string') update.poster_url = body.poster_url ? body.poster_url.slice(0, 1000) : null;
