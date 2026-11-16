@@ -173,7 +173,7 @@ function PortalApp() {
 
   async function logout() {
     if (token) await portalApi('logout', {}, token).catch(() => undefined);
-    sessionStorage.removeItem('navidad_portal_token'); setToken(null); setGroup(null); setEvents([]); setSelectedEvent(null); setAttendees([]);
+    clearPortalSession(); setToken(null); setGroup(null); setEvents([]); setSelectedEvent(null); setAttendees([]);
   }
 
   const activeAttendees = attendees.filter(person => person.status !== 'cancelled');
@@ -250,7 +250,7 @@ function PortalApp() {
         </tbody></table></div><div className="table-foot">Los datos se guardan en el servidor. Las personas canceladas se conservan en el historial, pero no cuentan como entrada.</div></div>}
       </>}
     </main>
-    <footer className="footer"><span>© {new Date().getFullYear()} TicketBaxe</span><span>Listas de asistentes · Acceso privado</span></footer>
+    <footer className="footer"><span>TicketBaxe</span><span>© {new Date().getFullYear()}</span></footer>
 
     {showForm && selectedEvent && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setShowForm(false); }}><form className="modal-card" onSubmit={saveAttendee}>
       <div className="modal-head"><div><span className="eyebrow">{form.id ? 'MODIFICAR REGISTRO' : 'NUEVA PERSONA'}</span><h2>{form.id ? 'Editar asistente' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}>×</button></div>
