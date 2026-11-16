@@ -13,7 +13,7 @@ type EventRecord = {
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; price_frozen_at?: string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -896,7 +896,7 @@ function AdminPriceEditor({
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
-  const priceFixed = isNominativeLocked(person) && person.price_paid !== null && person.price_paid !== undefined;
+  const priceFixed = Boolean(person.price_frozen_at);
   const original = person.price_paid === null || person.price_paid === undefined ? '' : String(person.price_paid);
   if (priceFixed) {
     return <div className="price-fixed">
