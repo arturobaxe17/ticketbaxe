@@ -2416,3 +2416,54 @@ body, html { background: var(--paper); color: var(--ink); }
     transition-duration: .01ms !important;
   }
 }
+
+
+
+/* Aclaración de funciones para responsables de grupo: siempre visible y discreta. */
+.portal-shell.portal-authenticated .group-duty-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: min(100%, 780px);
+  margin: 0 0 19px;
+  padding: 9px 13px 9px 10px;
+  color: #566257;
+  background: rgba(255,253,247,.76);
+  border: 1px solid #e4e1d6;
+  border-left: 3px solid #e97857;
+  border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(32,42,36,.025);
+}
+.portal-shell.portal-authenticated .group-duty-icon {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 21px;
+  color: #fff8ef;
+  background: #e97857;
+  border-radius: 50%;
+  font: 700 11px Georgia,serif;
+}
+.portal-shell.portal-authenticated .group-duty-note p {
+  margin: 0;
+  color: #657066;
+  font: 400 10px/1.5 Arial,sans-serif;
+}
+.portal-shell.portal-authenticated .group-duty-note strong {
+  color: #344338;
+  font-weight: 700;
+}
+@media(max-width:620px) {
+  .portal-shell.portal-authenticated .group-duty-note {
+    width: 100%;
+    gap: 8px;
+    margin-bottom: 15px;
+    padding: 8px 9px;
+  }
+  .portal-shell.portal-authenticated .group-duty-note p {
+    font-size: 9px;
+    line-height: 1.45;
+  }
+}
