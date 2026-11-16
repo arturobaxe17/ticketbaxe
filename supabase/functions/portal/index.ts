@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
       const { data: assignment } = await db.from('event_groups').select('event_id').eq('event_id', eventId).eq('group_id', group.id).maybeSingle();
       if (!assignment) throw new HttpError('Este evento no está asignado a tu grupo.', 403);
       const { data: event, error: eventError } = await db.from('events')
-        .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('id', eventId).eq('is_published', true).maybeSingle();
+        .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url, rrpp_name').eq('id', eventId).eq('is_published', true).maybeSingle();
       if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
       const { data: rows, error: rowsError } = await db.from('attendees')
         .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
