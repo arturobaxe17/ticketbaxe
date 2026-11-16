@@ -292,7 +292,7 @@ export async function storeAttendee(
     if (existingError || !existing || existing.group_id !== groupId || existing.event_id !== eventId) {
       throw new HttpError('No puedes modificar este asistente.', 404, 'ATTENDEE_NOT_FOUND');
     }
-    if (actorType === 'group' && existing.paid === true && existing.entry_number !== null) {
+    if (actorType === 'group' && (existing.price_frozen_at !== null || (existing.paid === true && existing.entry_number !== null))) {
       throw new HttpError('Esta entrada es nominativa: el pago está confirmado y ya tiene número de entrada. Solo administración puede modificarla.', 409, 'ATTENDEE_LOCKED');
     }
     const identityChanged =
