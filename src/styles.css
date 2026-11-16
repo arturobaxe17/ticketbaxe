@@ -595,3 +595,45 @@ body, html { background: var(--paper); color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+
+/* Acceso de administración alineado con la nueva aplicación. */
+.admin-auth-shell {
+  min-height: 100vh; padding: 0 32px 50px; display: flex; flex-direction: column;
+  background: var(--paper); color: var(--ink);
+}
+.admin-auth-top {
+  max-width: 1160px; width: 100%; margin: 0 auto; padding: 20px 0;
+  border-bottom: 1px solid var(--line); align-items: center;
+}
+.admin-auth-top .brand-name, .admin-auth-top .brand-name .brand-ticket { color: var(--ink); }
+.admin-auth-top .brand-name span:last-child { color: var(--accent); }
+.admin-auth-top .brand-caption { display: none; }
+.admin-auth-top .back-link { margin: 0; color: var(--muted); }
+.admin-auth-top .back-link:hover { color: var(--accent); }
+.admin-auth-card {
+  width: min(100%, 490px); margin: auto; padding: 28px 0 25px;
+  border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line-dark);
+  border-radius: 0; background: transparent; box-shadow: none;
+}
+.admin-auth-card h1 { margin: 11px 0 8px; color: var(--ink); font: 800 32px/1.08 Arial,sans-serif; letter-spacing: -.035em; }
+.admin-auth-card > p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.admin-auth-card .eyebrow { color: var(--accent-dark); }
+.admin-auth-card .admin-lock {
+  width: 30px; height: 30px; margin: 0 0 20px; color: var(--accent);
+  border: 1px solid var(--line-dark); border-radius: 50%; background: transparent; font-size: 15px;
+}
+.admin-auth-card .stack-form { margin-top: 22px; }
+.admin-auth-card .stack-form .field-label { margin: 15px 0 7px; }
+.admin-auth-card .stack-form .button { width: 100%; margin-top: 19px; min-height: 45px; }
+.admin-auth-card .text-button { margin-top: 15px; }
+.admin-auth-card .auth-bottom { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font: 400 10px/1.55 Arial,sans-serif; }
+.admin-auth-card .notice { margin-top: 18px; }
+@media(max-width:560px) {
+  .admin-auth-shell { padding: 0 18px 28px; }
+  .admin-auth-top { padding: 14px 0; }
+  .admin-auth-top .brand-symbol { width: 32px; height: 32px; flex-basis: 32px; }
+  .admin-auth-card { margin: auto 0; padding: 23px 0; }
+  .admin-auth-card h1 { font-size: 28px; }
+  .admin-auth-top .back-link { font-size: 9px; }
+}
