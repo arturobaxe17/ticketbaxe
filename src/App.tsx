@@ -277,6 +277,31 @@ function PortalApp() {
         </div>
       </section>}
 
+      {!token && !loading && <section className="access-policy" aria-labelledby="access-policy-title">
+        <div className="access-policy-heading">
+          <span>INFORMACIÓN IMPORTANTE</span>
+          <h2 id="access-policy-title">Antes de gestionar una entrada</h2>
+          <p>Dos cosas que conviene tener claras antes de añadir personas a una lista.</p>
+        </div>
+        <div className="access-policy-grid">
+          <article className="access-policy-card">
+            <div className="access-policy-number">01</div>
+            <div>
+              <h3>Las entradas son nominativas</h3>
+              <p>Cada entrada queda vinculada a la persona que figura en la lista. Cuando administración confirma el pago y asigna un número de entrada, el responsable del grupo ya no puede editar ni cancelar ese registro. Para solicitar una corrección, debe contactar con la administración de TicketBaxe.</p>
+            </div>
+          </article>
+          <article className="access-policy-card">
+            <div className="access-policy-number">02</div>
+            <div>
+              <h3>TicketBaxe es una plataforma independiente</h3>
+              <p>Esta página sirve para gestionar listas y no es la web oficial del evento ni está gestionada por la empresa organizadora. El acceso y el soporte técnico de TicketBaxe se atienden por separado. Para consultar las condiciones del evento, cancelaciones o acceso al recinto, utiliza los canales oficiales del organizador.</p>
+            </div>
+          </article>
+        </div>
+        <p className="access-policy-foot">Esta información explica el funcionamiento de TicketBaxe. No supone una renuncia a los derechos de los asistentes ni altera las responsabilidades que correspondan legalmente a cada parte.</p>
+      </section>}
+
       {token && group && !selectedEvent && <>
         <section className="welcome-row"><div><span className="eyebrow">TU GRUPO</span><h1>Hola, {group.responsible_name.split(' ')[0]}.</h1><p>Estos son los eventos disponibles para <strong>{group.label}</strong>.</p></div><div className="portal-welcome-art" aria-hidden="true"><span className="portal-welcome-ring" /><span className="portal-welcome-ticket"><b>B</b><i /><i /><i /></span><span className="portal-welcome-spark">✳</span></div></section>
         <div className="section-heading"><div><h2>Eventos</h2><p>Elige uno para consultar o actualizar la lista.</p></div><span className="count-chip">{events.length} en total</span></div>
