@@ -16,8 +16,9 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Aviso de documentos duplicados dentro de un mismo evento.
 - Avisos administrativos de posibles nombres repetidos, ignorando tildes, mayúsculas y signos; son advertencias, no bloqueos.
 - Estados confirmado, pendiente y cancelado.
-- El responsable puede consultar por persona si la organización ha marcado su entrada como pagada; no puede cambiar ese dato.
-- El responsable ve junto al nombre el número de entrada que le haya asignado la organización; no puede modificarlo.
+- El responsable puede consultar por persona si la organización ha marcado su entrada como pagada y el importe registrado; no puede cambiar ninguno de esos datos.
+- El responsable ve junto al nombre el número de entrada asignado por administración.
+- Cuando una entrada ya ha tenido el pago confirmado y un número asignado, queda bloqueada permanentemente para el responsable del grupo: no puede editarla ni cancelarla. Solo administración puede realizar correcciones.
 - Si el responsable modifica el nombre, el tipo de documento o el número de documento de una persona, el sistema retira automáticamente el estado de pagado y el número de entrada. La organización debe revisar los datos y, si corresponde, asignar un nuevo número.
 - El responsable también se puede añadir como asistente; no se cuenta automáticamente por el mero hecho de ser responsable.
 - Las entradas sueltas se guardan en una lista interna independiente y no aparecen en el portal ni en las listas de los grupos.
@@ -28,8 +29,10 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Acceso con contraseña de Supabase y, después, código OTP de seis cifras enviado al correo confirmado del administrador.
 - Crear eventos con fecha, hora, fecha límite de edición, aforo opcional y cartel JPG/PNG/WEBP (máximo 5 MB).
 - Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
-- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
+- Registrar el importe cobrado a cada asistente, que puede variar individualmente; el responsable lo ve en su portal.
+- Marcar individualmente a cada asistente como pagado o pendiente; para confirmar un pago primero debe registrarse el importe.
 - Asignar, cambiar o retirar el número de entrada de cada asistente. Solo administración puede modificarlo y no se puede repetir dentro del mismo evento.
+- En cuanto coinciden pago confirmado y número de entrada, el precio queda fijado permanentemente y la entrada pasa a ser nominativa. El bloqueo del responsable permanece aunque administración tenga que corregir la identidad.
 - Gestionar una lista independiente de **Entradas sueltas** por evento para personas que solicitan entradas directamente. Solo administración puede crear, editar o cancelar estos registros; no se muestran en ningún portal de grupo.
 - Las entradas sueltas sí cuentan para el aforo y aparecen en los CSV y versiones oficiales.
 - Cualquier cambio posterior de nombre o documento restablece el pago a pendiente y retira el número de entrada mediante un trigger de base de datos.
@@ -48,7 +51,9 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Una persona cancelada no cuenta como entrada activa y su registro queda en el historial.
 - Un mismo documento no puede tener dos registros activos en el mismo evento, aunque lo intenten desde grupos distintos.
 - El aforo se comprueba también en base de datos para evitar que dos altas simultáneas ocupen la misma última plaza.
-- El estado de pago solo puede modificarlo un administrador que haya superado la contraseña y el código OTP por correo; se muestra en el portal del grupo y se conserva en las listas oficiales.
+- El estado de pago, el importe y el número de entrada solo pueden modificarlos las funciones de administración protegidas.
+- El precio queda congelado de forma permanente al confirmar el pago y asignar el número de entrada; los responsables de grupo no pueden editar ni cancelar una entrada nominativa.
+- La página pública explica que TicketBaxe es una plataforma independiente y detalla el funcionamiento de las entradas nominativas.
 - El bucket público `event-posters` solo permite lectura pública de imágenes. Las subidas, cambios y borrados requieren una sesión de administrador verificada por correo.
 - El CSV oficial siempre procede de un snapshot cifrado. Las correcciones posteriores requieren publicar una nueva versión.
 - Una exportación CSV contiene datos personales en texto claro: protégela y elimínala cuando ya no sea necesaria.
