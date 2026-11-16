@@ -1,6 +1,6 @@
-# TicketBaxe 🎄
+# TicketBaxe
 
-Aplicación web privada para gestionar los asistentes de conciertos, Nochebuena, Nochevieja y otros eventos.
+Aplicación web privada para organizar asistentes de eventos.
 
 Cada responsable recibe un **identificador único de grupo**. Con ese código entra en su portal y administra únicamente las personas de su grupo y los eventos que la organización le haya asignado. Cada persona activa representa una entrada y lleva nombre, tipo de documento, DNI/NIE/pasaporte y estado de confirmación.
 
@@ -17,7 +17,8 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Avisos administrativos de posibles nombres repetidos, ignorando tildes, mayúsculas y signos; son advertencias, no bloqueos.
 - Estados confirmado, pendiente y cancelado.
 - El responsable puede consultar por persona si la organización ha marcado su entrada como pagada; no puede cambiar ese dato.
-- Si el responsable modifica el nombre, el tipo de documento o el número de documento de una persona, el sistema retira automáticamente el estado de pagado. La organización debe volver a comprobar los datos antes de marcarlo como pagado.
+- El responsable ve junto al nombre el número de entrada que le haya asignado la organización; no puede modificarlo.
+- Si el responsable modifica el nombre, el tipo de documento o el número de documento de una persona, el sistema retira automáticamente el estado de pagado y el número de entrada. La organización debe revisar los datos y, si corresponde, asignar un nuevo número.
 - El responsable también se puede añadir como asistente; no se cuenta automáticamente por el mero hecho de ser responsable.
 - Sesión de portal con caducidad de 12 horas.
 
@@ -26,7 +27,9 @@ Cada responsable recibe un **identificador único de grupo**. Con ese código en
 - Acceso con contraseña de Supabase y, después, código OTP de seis cifras enviado al correo confirmado del administrador.
 - Crear eventos con fecha, hora, fecha límite de edición, aforo opcional y cartel JPG/PNG/WEBP (máximo 5 MB).
 - Publicar u ocultar eventos desde el panel sin borrar sus datos ni su historial.
-- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso. Cualquier cambio posterior de nombre o documento restablece el pago a pendiente mediante un trigger de base de datos.
+- Marcar individualmente a cada asistente como pagado o pendiente; el responsable ve el estado desde su acceso.
+- Asignar, cambiar o retirar el número de entrada de cada asistente. Solo administración puede modificarlo y no se puede repetir dentro del mismo evento.
+- Cualquier cambio posterior de nombre o documento restablece el pago a pendiente y retira el número de entrada mediante un trigger de base de datos.
 - Crear grupos y asignarles uno o varios eventos.
 - Generar, renovar y revocar códigos de grupo. El código completo solo se muestra una vez.
 - Bloquear o activar grupos.
