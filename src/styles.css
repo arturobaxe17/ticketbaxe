@@ -664,3 +664,36 @@ body, html { background: var(--paper); color: var(--ink); }
   .admin-auth-form { padding: 22px 0 18px; }
   .admin-auth-form h1 { font-size: 29px; }
 }
+
+/* Acceso admin: formulario abierto, alineado a la izquierda y sin caja flotante. */
+.admin-auth-shell { padding: 0 32px 28px; background: var(--paper); }
+.admin-auth-content { width: min(100%, 980px); margin: auto; padding: 88px 0 90px; }
+.admin-auth-form {
+  width: 100%; max-width: 860px; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+.admin-auth-form .eyebrow { display: block; margin-bottom: 14px; }
+.admin-auth-form h1 { margin: 0 0 10px; font: 800 clamp(36px,4.5vw,52px)/1.02 Arial,sans-serif; letter-spacing: -.045em; }
+.admin-auth-form > p { max-width: 600px; margin-bottom: 25px; font-size: 13px; }
+.admin-auth-form .stack-form {
+  display: grid; grid-template-columns: minmax(180px,1fr) minmax(180px,1fr) 140px;
+  grid-template-areas: "email-label pass-label ." "email pass submit";
+  align-items: end; gap: 8px 12px; margin-top: 26px;
+}
+.admin-auth-form .stack-form .field-label { margin: 0 0 6px; }
+.admin-auth-form .stack-form .field-label:nth-of-type(1) { grid-area: email-label; }
+.admin-auth-form .stack-form input[type="email"] { grid-area: email; }
+.admin-auth-form .stack-form .field-label:nth-of-type(2) { grid-area: pass-label; }
+.admin-auth-form .stack-form input[type="password"] { grid-area: pass; }
+.admin-auth-form .stack-form .button { grid-area: submit; width: 100%; margin: 0; min-height: 46px; }
+.admin-auth-form .stack-form input { min-height: 46px; }
+.admin-auth-form .auth-bottom { max-width: 620px; margin-top: 29px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font: 400 10px Arial,sans-serif; text-align: left; }
+.admin-auth-form .notice { max-width: 640px; margin-top: 20px; }
+@media(max-width:700px) {
+  .admin-auth-shell { padding: 0 18px 24px; }
+  .admin-auth-content { width: 100%; padding: 58px 0; }
+  .admin-auth-form .stack-form { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .admin-auth-form .stack-form .field-label { margin: 15px 0 7px; }
+  .admin-auth-form .stack-form .button { margin-top: 18px; }
+  .admin-auth-form h1 { font-size: 35px; }
+}
