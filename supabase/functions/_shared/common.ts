@@ -226,6 +226,7 @@ export async function decryptAttendee(row: Record<string, any>): Promise<Record<
     document: await decryptText(row.document_ciphertext, row.document_iv),
     status: row.status,
     paid: row.paid === true,
+    entry_number: row.entry_number ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     created_by_type: row.created_by_type,
@@ -284,7 +285,7 @@ export async function storeAttendee(
 
   if (id) {
     const { data: existing, error: existingError } = await db.from('attendees')
-      .select('id, group_id, event_id, full_name, document_type, document_hash, paid')
+      .select('id, group_id, event_id, full_name, document_type, document_hash, paid, entry_number')
       .eq('id', id).maybeSingle();
     if (existingError || !existing || existing.group_id !== groupId || existing.event_id !== eventId) {
       throw new HttpError('No puedes modificar este asistente.', 404, 'ATTENDEE_NOT_FOUND');
@@ -299,9 +300,12 @@ export async function storeAttendee(
     };
     // Explicitly reset here as well as in the DB trigger. Changing identity details
     // means the old payment confirmation no longer refers to the same attendee.
-    if (identityChanged) updateValues.paid = false;
+    if (identityChanged) {
+      updateValues.paid = false;
+      updateValues.entry_number = null;
+    }
     const { data, error } = await db.from('attendees').update(updateValues)
-      .eq('id', id).select('id, event_id, group_id, full_name, document_type, status, paid, updated_at').single();
+      .eq('id', id).select('id, event_id, group_id, full_name, document_type, status, paid, entry_number, updated_at').single();
     if (error) {
       if (error.code === '23505') throw new HttpError('Este DNI/NIE/pasaporte ya está registrado en este evento.', 409, 'DUPLICATE_DOCUMENT');
       if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
@@ -315,6 +319,8 @@ export async function storeAttendee(
         status,
         identity_changed: identityChanged,
         payment_reset: identityChanged && existing.paid === true,
+      entry_number_reset: identityChanged && existing.entry_number !== null,
+        entry_number_reset: identityChanged && existing.entry_number !== null,
       },
     });
     return {
@@ -348,7 +354,7 @@ export async function createOfficialSnapshot(
   if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
   if (event.status !== 'closed') throw new HttpError('El evento debe estar cerrado antes de crear una lista oficial.', 409, 'EVENT_NOT_CLOSED');
   const { data: rows, error: rowsError } = await db.from('attendees')
-    .select('id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
+    .select('id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
     .eq('event_id', eventId).neq('status', 'cancelled').order('full_name');
   if (rowsError) throw new HttpError('No se pudo preparar la lista oficial.', 500);
   const groupIds = [...new Set((rows ?? []).map((r: any) => r.group_id))];
@@ -363,6 +369,7 @@ export async function createOfficialSnapshot(
       id: row.id, group_id: row.group_id, group_label: groupMap[row.group_id] ?? 'Grupo',
       full_name: row.full_name, document_type: row.document_type,
       document: await decryptText(row.document_ciphertext, row.document_iv), status: row.status, paid: row.paid === true,
+      entry_number: row.entry_number ?? null,
       created_at: row.created_at, updated_at: row.updated_at,
     });
   }
