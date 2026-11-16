@@ -15,14 +15,51 @@ async function saveGroupCode(db: ReturnType<typeof adminDb>, groupId: string): P
   return code;
 }
 
+async function getOrCreateLooseGroup(db: ReturnType<typeof adminDb>) {
+  const { data: existing, error: lookupError } = await db.from('groups')
+    .select('id, label, responsible_name, contact, active, code_last4')
+    .eq('is_internal', true).maybeSingle();
+  if (lookupError) throw new HttpError('No se pudo preparar Entradas sueltas.', 500);
+  if (existing) return existing;
+
+  // The internal group has no distributed access code and is permanently inactive.
+  const secretCode = `INTERNAL-${randomToken(32)}`;
+  const codeHash = await hmacHex(await appSecret('CODE_HASH_SECRET'), secretCode);
+  const { data: created, error: createError } = await db.from('groups').insert({
+    label: 'Entradas sueltas',
+    responsible_name: 'Administración',
+    contact: '',
+    code_hash: codeHash,
+    code_last4: '----',
+    active: false,
+    is_internal: true,
+    created_by: null,
+  }).select('id, label, responsible_name, contact, active, code_last4').single();
+
+  if (createError?.code === '23505') {
+    const { data: raced, error: raceError } = await db.from('groups')
+      .select('id, label, responsible_name, contact, active, code_last4')
+      .eq('is_internal', true).maybeSingle();
+    if (!raceError && raced) return raced;
+  }
+  if (createError || !created) throw new HttpError('No se pudo preparar Entradas sueltas.', 500);
+  return created;
+}
+
 async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
   const { data: event, error } = await db.from('events').select('*').eq('id', eventId).maybeSingle();
   if (error || !event) throw new HttpError('No se ha encontrado el evento.', 404);
+  const looseGroup = await getOrCreateLooseGroup(db);
+  const { error: looseAssignmentError } = await db.from('event_groups').upsert(
+    { event_id: eventId, group_id: looseGroup.id },
+    { onConflict: 'event_id,group_id', ignoreDuplicates: true },
+  );
+  if (looseAssignmentError) throw new HttpError('No se pudo habilitar Entradas sueltas para este evento.', 500);
   const { data: assignments } = await db.from('event_groups').select('group_id').eq('event_id', eventId);
   const groupIds = (assignments ?? []).map((x: any) => x.group_id);
   let groups: any[] = [];
   if (groupIds.length) {
-    const { data } = await db.from('groups').select('id, label, responsible_name, contact, active, code_last4').in('id', groupIds).order('label');
+    const { data } = await db.from('groups').select('id, label, responsible_name, contact, active, code_last4').in('id', groupIds).eq('is_internal', false).order('label');
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
@@ -30,7 +67,11 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
-  for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
+  for (const row of rows ?? []) attendees.push({
+    ...(await decryptAttendee(row)),
+    paid: row.paid === true,
+    is_loose: row.group_id === looseGroup.id,
+  });
   const nameKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]/g, '');
   const nameCounts = new Map<string, number>();
   for (const person of attendees) if (person.status !== 'cancelled') {
@@ -44,7 +85,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
   const { data: snapshots } = await db.from('official_snapshots')
     .select('id, version, attendee_count, confirmed_count, pending_count, created_at, created_by_type')
     .eq('event_id', eventId).order('version', { ascending: false });
-  return { event, groups, attendees, snapshots: snapshots ?? [] };
+  return { event, groups, loose_group: looseGroup, attendees, snapshots: snapshots ?? [] };
 }
 
 function parseIso(value: unknown, label: string): string {
@@ -236,7 +277,7 @@ Deno.serve(async (req: Request) => {
           group_count: Number(item.group_count ?? 0),
         };
       });
-      const { count: activeGroups } = await db.from('groups').select('id', { count: 'exact', head: true }).eq('active', true);
+      const { count: activeGroups } = await db.from('groups').select('id', { count: 'exact', head: true }).eq('active', true).eq('is_internal', false);
       return json(req, { ok: true, events: summary, active_groups: activeGroups ?? 0 });
     }
 
@@ -338,7 +379,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'list_groups') {
       const { data: groups, error } = await db.from('groups')
-        .select('id, label, responsible_name, contact, active, code_last4, created_at').order('created_at', { ascending: false });
+        .select('id, label, responsible_name, contact, active, code_last4, created_at').eq('is_internal', false).order('created_at', { ascending: false });
       if (error) throw new HttpError('No se pudieron cargar los grupos.', 500);
       const result = [];
       for (const group of groups ?? []) {
@@ -354,8 +395,8 @@ Deno.serve(async (req: Request) => {
       const responsible = assertString(body.responsible_name, 'El responsable', 120);
       const eventIds = Array.isArray(body.event_ids) ? [...new Set(body.event_ids.filter((x: unknown) => typeof x === 'string'))] as string[] : [];
       if (!eventIds.length) throw new HttpError('El grupo debe tener al menos un evento asignado.');
-      const { data: current } = await db.from('groups').select('id').eq('id', groupId).maybeSingle();
-      if (!current) throw new HttpError('No se ha encontrado el grupo.', 404);
+      const { data: current } = await db.from('groups').select('id, is_internal').eq('id', groupId).maybeSingle();
+      if (!current || current.is_internal) throw new HttpError('No puedes modificar este grupo.', 404);
       const { data: oldAssignments } = await db.from('event_groups').select('event_id').eq('group_id', groupId);
       const oldIds = (oldAssignments ?? []).map((a: any) => a.event_id);
       const removeIds = oldIds.filter((id: string) => !eventIds.includes(id));
@@ -379,8 +420,8 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'regenerate_group_code') {
       const groupId = String(body.group_id ?? '');
-      const { data: group } = await db.from('groups').select('id').eq('id', groupId).maybeSingle();
-      if (!group) throw new HttpError('No se ha encontrado el grupo.', 404);
+      const { data: group } = await db.from('groups').select('id, is_internal').eq('id', groupId).maybeSingle();
+      if (!group || group.is_internal) throw new HttpError('No se puede renovar este identificador.', 404);
       const code = await saveGroupCode(db, groupId);
       await db.from('portal_sessions').update({ revoked_at: new Date().toISOString() }).eq('group_id', groupId).is('revoked_at', null);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: groupId, action: 'group.code_regenerated', details: {} });
@@ -390,6 +431,8 @@ Deno.serve(async (req: Request) => {
     if (action === 'set_group_active') {
       const groupId = String(body.group_id ?? '');
       const active = body.active === true;
+      const { data: targetGroup } = await db.from('groups').select('id, is_internal').eq('id', groupId).maybeSingle();
+      if (!targetGroup || targetGroup.is_internal) throw new HttpError('No puedes cambiar el acceso de este grupo.', 404);
       const { error } = await db.from('groups').update({ active }).eq('id', groupId);
       if (error) throw new HttpError('No se pudo cambiar el estado del grupo.', 500);
       if (!active) await db.from('portal_sessions').update({ revoked_at: new Date().toISOString() }).eq('group_id', groupId).is('revoked_at', null);
