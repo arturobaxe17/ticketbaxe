@@ -63,7 +63,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
-    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, created_at, updated_at')
+    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, price_frozen_at, created_at, updated_at')
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
@@ -490,14 +490,14 @@ Deno.serve(async (req: Request) => {
         pricePaid = cents / 100;
       }
       const { data: attendee, error: attendeeError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, paid, entry_number, price_paid, status')
+        .select('id, event_id, group_id, full_name, paid, entry_number, price_paid, price_frozen_at, status')
         .eq('id', attendeeId).maybeSingle();
       if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
-      const locked = attendee.paid === true && attendee.entry_number !== null;
+      const locked = attendee.price_frozen_at !== null;
       if (attendee.paid === true && pricePaid === null) {
         throw new HttpError('No puedes quitar el importe mientras el pago siga marcado como pagado.');
       }
-      if (locked && attendee.price_paid !== null && pricePaid !== Number(attendee.price_paid)) {
+      if (locked && pricePaid !== Number(attendee.price_paid)) {
         throw new HttpError('El precio queda fijado cuando el pago está confirmado y se asigna el número de entrada.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
       const { error: updateError } = await db.from('attendees')
