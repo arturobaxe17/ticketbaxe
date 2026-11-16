@@ -77,7 +77,7 @@ Deno.serve(async (req: Request) => {
         .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('id', eventId).eq('is_published', true).maybeSingle();
       if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
       const { data: rows, error: rowsError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
+        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, created_at, updated_at')
         .eq('event_id', eventId).eq('group_id', group.id).order('created_at');
       if (rowsError) throw new HttpError('No se han podido cargar los asistentes.', 500);
       const attendees = [];
@@ -99,9 +99,12 @@ Deno.serve(async (req: Request) => {
       const eventId = String(body.event_id ?? '');
       const attendeeId = String(body.attendee_id ?? '');
       await eventIsEditable(db, eventId);
-      const { data: attendee, error } = await db.from('attendees').select('id, group_id, event_id, full_name, status')
+      const { data: attendee, error } = await db.from('attendees').select('id, group_id, event_id, full_name, status, paid, entry_number')
         .eq('id', attendeeId).eq('event_id', eventId).maybeSingle();
       if (error || !attendee || attendee.group_id !== group.id) throw new HttpError('No puedes modificar este asistente.', 404);
+      if (attendee.paid === true && attendee.entry_number !== null) {
+        throw new HttpError('Esta entrada es nominativa: el pago está confirmado y ya tiene número de entrada. Solo administración puede modificarla.', 409, 'ATTENDEE_LOCKED');
+      }
       const { error: updateError } = await db.from('attendees').update({ status: 'cancelled', updated_by_type: 'group' }).eq('id', attendeeId);
       if (updateError) throw new HttpError('No se pudo cancelar el asistente.', 500);
       await writeAudit(db, { actor_type: 'group', actor_id: group.id, group_id: group.id, event_id: eventId, action: 'attendee.cancelled', details: { attendee_id: attendeeId } });
