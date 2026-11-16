@@ -46,7 +46,7 @@ function formatEuro(value: number | string | null | undefined): string {
 }
 
 function isNominativeLocked(person: Attendee): boolean {
-  return person.paid === true && person.entry_number !== null && person.entry_number !== undefined;
+  return Boolean(person.price_frozen_at) || (person.paid === true && person.entry_number !== null && person.entry_number !== undefined);
 }
 
 function App() {
