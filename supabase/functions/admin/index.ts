@@ -26,7 +26,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
-    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
+    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
@@ -421,6 +421,36 @@ Deno.serve(async (req: Request) => {
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name } });
       return json(req, { ok: true, paid });
+    }
+
+    if (action === 'set_attendee_entry_number') {
+      const attendeeId = String(body.attendee_id ?? '');
+      const rawNumber = body.entry_number;
+      const entryNumber = rawNumber === null || rawNumber === undefined || rawNumber === ''
+        ? null
+        : rawNumber;
+      if (entryNumber !== null && (typeof entryNumber !== 'number' || !Number.isSafeInteger(entryNumber) || entryNumber < 1 || entryNumber > 2147483647)) {
+        throw new HttpError('El número de entrada debe ser un entero positivo.');
+      }
+      const { data: attendee, error: attendeeError } = await db.from('attendees')
+        .select('id, event_id, group_id, full_name, entry_number, status')
+        .eq('id', attendeeId).maybeSingle();
+      if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
+      if (attendee.status === 'cancelled' && entryNumber !== null) {
+        throw new HttpError('No se puede asignar un número de entrada a una persona cancelada.');
+      }
+      const { error: updateError } = await db.from('attendees')
+        .update({ entry_number: entryNumber }).eq('id', attendeeId);
+      if (updateError?.code === '23505') {
+        throw new HttpError('Ese número ya está asignado a otra persona de este evento.', 409, 'ENTRY_NUMBER_IN_USE');
+      }
+      if (updateError) throw new HttpError('No se pudo guardar el número de entrada.', 500);
+      await writeAudit(db, {
+        actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
+        action: entryNumber === null ? 'attendee.entry_number_removed' : 'attendee.entry_number_assigned',
+        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_entry_number: attendee.entry_number, entry_number: entryNumber },
+      });
+      return json(req, { ok: true, entry_number: entryNumber });
     }
 
     if (action === 'cancel_attendee') {
