@@ -367,9 +367,11 @@ Deno.serve(async (req: Request) => {
       const code = makeCode();
       const codeHash = await hmacHex(await appSecret('CODE_HASH_SECRET'), code);
       const { data: group, error } = await db.from('groups').insert({
-        label, responsible_name: responsible, contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
+        label, responsible_name: responsible,
+        rrpp_name: typeof body.rrpp_name === 'string' ? body.rrpp_name.trim().slice(0, 120) || null : null,
+        contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
         code_hash: codeHash, code_last4: code.slice(-4), created_by: admin.id,
-      }).select('id, label, responsible_name, contact, active, code_last4, created_at').single();
+      }).select('id, label, responsible_name, rrpp_name, contact, active, code_last4, created_at').single();
       if (error) throw new HttpError('No se pudo crear el grupo.', 500);
       const assignments = eventIds.map(event_id => ({ event_id, group_id: group.id }));
       const { error: assignmentError } = await db.from('event_groups').insert(assignments);
@@ -384,7 +386,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'list_groups') {
       const { data: groups, error } = await db.from('groups')
-        .select('id, label, responsible_name, contact, active, code_last4, created_at').eq('is_internal', false).order('created_at', { ascending: false });
+        .select('id, label, responsible_name, rrpp_name, contact, active, code_last4, created_at').eq('is_internal', false).order('created_at', { ascending: false });
       if (error) throw new HttpError('No se pudieron cargar los grupos.', 500);
       const result = [];
       for (const group of groups ?? []) {
@@ -410,7 +412,9 @@ Deno.serve(async (req: Request) => {
         if ((count ?? 0) > 0) throw new HttpError('No puedes quitar un evento que ya tiene asistentes registrados en este grupo.');
       }
       const { error: updateError } = await db.from('groups').update({
-        label, responsible_name: responsible, contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
+        label, responsible_name: responsible,
+        rrpp_name: typeof body.rrpp_name === 'string' ? body.rrpp_name.trim().slice(0, 120) || null : null,
+        contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
       }).eq('id', groupId);
       if (updateError) throw new HttpError('No se pudo actualizar el grupo.', 500);
       if (removeIds.length) await db.from('event_groups').delete().eq('group_id', groupId).in('event_id', removeIds);
