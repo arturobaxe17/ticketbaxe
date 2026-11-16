@@ -7,10 +7,10 @@ type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
   capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean;
-  attendee_count?: number; confirmed_count?: number; pending_count?: number; group_count?: number;
+  attendee_count?: number; group_count?: number;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
-type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
+type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
   document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; price_frozen_at?: string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
@@ -37,7 +37,7 @@ function clearPortalSession(): void {
   sessionStorage.removeItem(LEGACY_PORTAL_SESSION_KEY);
 }
 
-const emptyAttendee: AttendeeForm = { id: '', full_name: '', document_type: 'DNI', document: '', status: 'confirmed' };
+const emptyAttendee: AttendeeForm = { id: '', full_name: '', document_type: 'DNI', document: '' };
 
 function formatEuro(value: number | string | null | undefined): string {
   if (value === null || value === undefined || value === '') return 'Sin registrar';
@@ -147,7 +147,7 @@ function PortalApp() {
 
   function startNew() { setForm({ ...emptyAttendee }); setShowForm(true); }
   function startEdit(attendee: Attendee) {
-    setForm({ id: attendee.id, full_name: attendee.full_name, document_type: attendee.document_type, document: attendee.document, status: attendee.status === 'pending' ? 'pending' : 'confirmed' });
+    setForm({ id: attendee.id, full_name: attendee.full_name, document_type: attendee.document_type, document: attendee.document });
     setShowForm(true);
   }
 
@@ -191,7 +191,7 @@ function PortalApp() {
   }
 
   const activeAttendees = attendees.filter(person => person.status !== 'cancelled');
-  const confirmedCount = activeAttendees.filter(person => person.status === 'confirmed').length;
+  const paidCount = activeAttendees.filter(person => person.paid === true).length;
 
   return <div className={`app-shell portal-shell ${group ? 'portal-authenticated' : 'portal-public'}`}>
     <header className={`topbar ${group ? 'portal-sidebar' : 'public-header'}`}>
@@ -318,15 +318,14 @@ function PortalApp() {
       {selectedEvent && <>
         <button className="back-link" onClick={() => { setSelectedEvent(null); setShowForm(false); void loadPortal(token!); }}>← Volver a mis eventos</button>
         <section className="event-detail-header">{selectedEvent.poster_url && <img className="event-poster-detail" src={selectedEvent.poster_url} alt={`Cartel de ${selectedEvent.name}`} />}<div><span className="eyebrow">LISTA DEL EVENTO</span><h1>{selectedEvent.name}</h1><p>{dateTime(selectedEvent.starts_at)} <span className="dot-separator">·</span> RR.PP.: {group?.rrpp_name?.trim() || 'Pendiente de asignar'}</p></div><StatusPill status={selectedEvent.status} editable={selectedEvent.editable} /></section>
-        <div className="detail-stats"><div><span>Asistentes de tu grupo</span><strong>{activeAttendees.length}</strong></div><div><span>Entradas confirmadas</span><strong>{confirmedCount}</strong></div><div><span>Plazo de modificación</span><strong className="stat-date">{dateTime(selectedEvent.deadline_at)}</strong></div></div>
+        <div className="detail-stats"><div><span>Asistentes de tu grupo</span><strong>{activeAttendees.length}</strong></div><div><span>Entradas pagadas</span><strong>{paidCount}</strong></div><div><span>Plazo de modificación</span><strong className="stat-date">{dateTime(selectedEvent.deadline_at)}</strong></div></div>
         {!selectedEvent.editable && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
         {attendees.some(isNominativeLocked) && <div className="nominative-banner"><span>🔒</span><div><strong>Entradas nominativas</strong><p>Cuando una entrada figura como pagada y tiene número asignado, queda bloqueada para el responsable del grupo. Si detectas un error, solicita la corrección a la administración.</p></div></div>}
         <div className="section-heading attendee-heading"><div><h2>Personas de tu grupo</h2><p>Cada persona activa cuenta como una entrada. Añade también al responsable si va a asistir.</p></div>{selectedEvent.editable && <button className="button button-primary" onClick={startNew}>＋ Añadir asistente</button>}</div>
-        {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Estado</th><th>Precio</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+        {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Precio</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
           {attendees.map(person => <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
-            <td data-label="Nombre"><strong>{person.full_name}</strong>{person.entry_number != null && <span className="entry-number-badge">N.º {person.entry_number}</span>}</td>
+            <td data-label="Nombre"><strong>{person.full_name}</strong>{person.status === 'cancelled' && <span className="pill pill-red">Cancelado</span>}{person.entry_number != null && <span className="entry-number-badge">N.º {person.entry_number}</span>}</td>
             <td data-label="Documento"><span className="document-type">{person.document_type}</span> {person.document}</td>
-            <td data-label="Estado"><StatusPill status={person.status} /></td>
             <td data-label="Precio">{formatEuro(person.price_paid)}</td>
             <td data-label="Pago">{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td>
             <td data-label="Acciones" className="action-cell">
@@ -343,7 +342,6 @@ function PortalApp() {
       <p className="modal-description">Una persona equivale a una entrada. Comprueba que el documento esté bien escrito.</p>
       <label className="field-label">Nombre y apellidos</label><input className="input" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required minLength={2} maxLength={140} placeholder="Nombre completo" />
       <div className="form-two"><div><label className="field-label">Tipo de documento</label><select className="input" value={form.document_type} onChange={e => setForm({ ...form, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Número de documento</label><input className="input" value={form.document} onChange={e => setForm({ ...form, document: e.target.value.toUpperCase() })} required maxLength={20} placeholder="00000000X" autoCapitalize="characters" /></div></div>
-      <label className="field-label">Estado de la asistencia</label><select className="input" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as 'pending' | 'confirmed' })}><option value="confirmed">Confirmada</option><option value="pending">Pendiente de confirmar</option></select>
       <div className="form-note">El DNI/NIE se valida antes de guardar. No se admiten documentos duplicados dentro del mismo evento.</div>
       <div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowForm(false)}>Cancelar</button><button className="button button-primary" disabled={saving}>{saving ? 'Guardando…' : 'Guardar asistente'}</button></div>
     </form></div>}
@@ -550,7 +548,7 @@ function AdminApp() {
   }
 
   function editAdminAttendee(person: Attendee) {
-    setAdminAttendeeForm({ id: person.id, group_id: person.group_id, full_name: person.full_name, document_type: person.document_type, document: person.document, status: person.status === 'pending' ? 'pending' : 'confirmed' });
+    setAdminAttendeeForm({ id: person.id, group_id: person.group_id, full_name: person.full_name, document_type: person.document_type, document: person.document });
     setShowAdminAttendeeForm(true);
   }
 
@@ -607,7 +605,7 @@ function AdminApp() {
     event.preventDefault(); if (!selectedEvent) return; setBusy(true);
     try {
       const isLooseEntry = adminAttendeeForm.group_id === selectedEvent.loose_group?.id;
-      const result = await adminApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document, status: adminAttendeeForm.status } });
+      const result = await adminApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document } });
       setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event);
       const resetMessages = [
         result.attendee?.payment_reset ? 'el pago vuelve a estar pendiente' : '',
@@ -689,7 +687,7 @@ function AdminApp() {
       const rows = (snapshot.records ?? []).map((person: any) => ({
         Evento: snapshot.event?.name ?? '', Responsable: person.group_label, Nombre: person.full_name,
         Numero_entrada: person.entry_number ?? '', Precio_EUR: person.price_paid ?? '', Tipo_documento: person.document_type, Documento: person.document,
-        Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
+        Pago: person.paid ? 'Pagado' : 'Pendiente',
       }));
       downloadCsv(`${(snapshot.event?.name ?? 'evento').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-oficial-v${snapshot.version}.csv`, rows);
     } catch (error) { notify('error', (error as Error).message); }
@@ -704,9 +702,9 @@ function AdminApp() {
       const result = await adminApi<{ snapshot: any }>('download_snapshot', { snapshot_id: snapshotId });
       const snapshot = result.snapshot;
       const escape = (value: unknown) => { const replacements: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }; return String(value ?? '').replace(/[&<>"']/g, char => replacements[char] ?? char); };
-      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${person.entry_number ?? '—'}</td><td>${person.price_paid == null ? '—' : Number(person.price_paid).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
+      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${person.entry_number ?? '—'}</td><td>${person.price_paid == null ? '—' : Number(person.price_paid).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
       printWindow.onload = () => printWindow.print();
-      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>N.º entrada</th><th>Precio</th><th>Tipo</th><th>Documento</th><th>Estado</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
+      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>N.º entrada</th><th>Precio</th><th>Tipo</th><th>Documento</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
       printWindow.document.close();
     } catch (error) { printWindow.close(); notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -717,7 +715,7 @@ function AdminApp() {
     const rows = (selectedEvent.attendees ?? []).filter((p: Attendee) => p.status !== 'cancelled').map((person: Attendee) => ({
       Grupo: person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
       Nombre: person.full_name, Numero_entrada: person.entry_number ?? '', Precio_EUR: person.price_paid ?? '', Tipo_documento: person.document_type, Documento: person.document,
-      Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
+      Pago: person.paid ? 'Pagado' : 'Pendiente',
     }));
     if (!rows.length) { notify('info', 'No hay asistentes activos para exportar.'); return; }
     downloadCsv(`${selectedEvent.event.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-provisional.csv`, rows);
@@ -774,14 +772,14 @@ function AdminApp() {
         <div className="section-heading"><div><h2>Listas de grupo</h2><p>Personas apuntadas por los responsables. Sus datos identificativos solo se muestran aquí.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && selectedEvent.groups.length > 0 && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir a un grupo</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
         {selectedEvent.attendees.some((person: Attendee) => person.name_duplicate) && <div className="duplicate-alert"><strong>⚠ Posibles nombres repetidos detectados</strong><span>Revisa los avisos marcados en la lista y consúltalo con el responsable del grupo. No se bloquean automáticamente porque pueden ser personas distintas con el mismo nombre.</span></div>}
-        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
           {selectedEvent.attendees.filter((person: Attendee) => !person.is_loose).map((person: Attendee) => {
             const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
             const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
             const priceDraft = priceDrafts[person.id] ?? String(person.price_paid ?? '');
             return <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
               <td>{selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '—'}</td>
-              <td><strong>{person.full_name}</strong>{isNominativeLocked(person) && <span className="nominative-lock-badge admin-nominative-badge">🔒 Nominativa</span>}</td>
+              <td><strong>{person.full_name}</strong>{person.status === 'cancelled' && <span className="pill pill-red">Cancelado</span>}{isNominativeLocked(person) && <span className="nominative-lock-badge admin-nominative-badge">🔒 Nominativa</span>}</td>
               <td className="entry-number-cell">
                 {person.status === 'cancelled'
                   ? (person.entry_number != null ? <span className="entry-number-badge">N.º {person.entry_number}</span> : '—')
@@ -799,12 +797,11 @@ function AdminApp() {
               </td>
               <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
               <td><span className="document-type">{person.document_type}</span> {person.document}</td>
-              <td><StatusPill status={person.status} /></td>
               <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
               <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
             </tr>;
           })}
-          {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={8} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
+          {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={7} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
         </tbody></table></div></div>
         <section className="loose-tickets-section">
           <div className="section-heading">
@@ -820,14 +817,14 @@ function AdminApp() {
           {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).length === 0
             ? <div className="loose-empty"><span className="loose-empty-icon">＋</span><div><strong>Aún no hay entradas sueltas</strong><p>Añade aquí a quien te pida una entrada directamente, sin pasar por un grupo.</p></div></div>
             : <div className="table-card"><div className="table-scroll"><table>
-              <thead><tr><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Estado</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead>
+              <thead><tr><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead>
               <tbody>
                 {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).map((person: Attendee) => {
                   const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
                   const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
                   const priceDraft = priceDrafts[person.id] ?? String(person.price_paid ?? '');
                   return <tr key={person.id} className={person.status === 'cancelled' ? 'row-cancelled' : ''}>
-                    <td><strong>{person.full_name}</strong>{isNominativeLocked(person) && <span className="nominative-lock-badge admin-nominative-badge">🔒 Nominativa</span>}</td>
+                    <td><strong>{person.full_name}</strong>{person.status === 'cancelled' && <span className="pill pill-red">Cancelado</span>}{isNominativeLocked(person) && <span className="nominative-lock-badge admin-nominative-badge">🔒 Nominativa</span>}</td>
                     <td className="entry-number-cell">
                       {person.status === 'cancelled'
                         ? (person.entry_number != null ? <span className="entry-number-badge">N.º {person.entry_number}</span> : '—')
@@ -840,8 +837,7 @@ function AdminApp() {
                     </td>
                     <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
                     <td><span className="document-type">{person.document_type}</span> {person.document}</td>
-                    <td><StatusPill status={person.status} /></td>
-                    <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
+                          <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
                     <td className="action-cell">{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
                   </tr>;
                 })}
@@ -849,7 +845,7 @@ function AdminApp() {
             </table></div></div>}
         </section>
                 <div className="section-heading snapshots-heading"><div><h2>Versiones oficiales</h2><p>Cada versión queda congelada y se conserva aunque reabras el evento.</p></div></div>
-        <div className="snapshot-list">{selectedEvent.snapshots.length === 0 ? <div className="empty-inline">Todavía no se ha generado una lista oficial.</div> : selectedEvent.snapshots.map((snapshot: any) => <div className="snapshot-row" key={snapshot.id}><div className="snapshot-badge">V{snapshot.version}</div><div className="snapshot-meta"><strong>Lista oficial · Versión {snapshot.version}</strong><span>{dateTime(snapshot.created_at)} · {snapshot.attendee_count} personas · {snapshot.confirmed_count} confirmadas · {snapshot.pending_count} pendientes</span></div><div className="snapshot-actions"><button className="button button-light button-small" onClick={() => void downloadSnapshot(snapshot.id)} disabled={busy}>Descargar CSV ↓</button><button className="button button-light button-small" onClick={() => void printSnapshot(snapshot.id)} disabled={busy}>Imprimir / PDF</button></div></div>)}</div>
+        <div className="snapshot-list">{selectedEvent.snapshots.length === 0 ? <div className="empty-inline">Todavía no se ha generado una lista oficial.</div> : selectedEvent.snapshots.map((snapshot: any) => <div className="snapshot-row" key={snapshot.id}><div className="snapshot-badge">V{snapshot.version}</div><div className="snapshot-meta"><strong>Lista oficial · Versión {snapshot.version}</strong><span>{dateTime(snapshot.created_at)} · {snapshot.attendee_count} personas</span></div><div className="snapshot-actions"><button className="button button-light button-small" onClick={() => void downloadSnapshot(snapshot.id)} disabled={busy}>Descargar CSV ↓</button><button className="button button-light button-small" onClick={() => void printSnapshot(snapshot.id)} disabled={busy}>Imprimir / PDF</button></div></div>)}</div>
         <div className="section-heading"><div><h2>Grupos asignados</h2><p>Responsables que pueden gestionar este evento.</p></div></div>
         <div className="group-chip-grid">{selectedEvent.groups.map((g: GroupRecord) => <div className="group-mini-card" key={g.id}><strong>{g.label}</strong><span>{g.responsible_name}</span><small>{g.active ? `Código terminado en ${g.code_last4}` : 'Acceso bloqueado'}</small></div>)}</div>
       </> : <>
@@ -861,7 +857,6 @@ function AdminApp() {
             <div className="admin-event-date"><strong>{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit' })}</strong><span>{new Date(item.starts_at).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span></div>
             <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados</span></div>
             <div className="admin-event-count"><strong>{item.attendee_count ?? 0}</strong><span>asistentes</span></div>
-            <div className="admin-event-confirmed"><strong>{item.confirmed_count ?? 0}</strong><span>confirmados</span></div>
             <StatusPill status={item.status} editable={item.status === 'open' && new Date(item.deadline_at).getTime() > Date.now()} /><b className="row-arrow">→</b>
           </button>)}</div>}
         </>}
@@ -881,7 +876,7 @@ function AdminApp() {
 
     {showGroupForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createGroup}><div className="modal-head"><div><span className="eyebrow">RESPONSABLES</span><h2>{groupForm.id ? 'Editar grupo' : 'Crear grupo'}</h2></div><button type="button" className="icon-button" onClick={() => setShowGroupForm(false)}>×</button></div><label className="field-label">Nombre del grupo</label><input className="input" value={groupForm.label} onChange={e => setGroupForm({ ...groupForm, label: e.target.value })} required placeholder="Ej. Grupo Juan" /><label className="field-label">Nombre del responsable del grupo</label><input className="input" value={groupForm.responsible_name} onChange={e => setGroupForm({ ...groupForm, responsible_name: e.target.value })} required placeholder="Nombre y apellidos" /><label className="field-label">RR.PP. asignado</label><input className="input" value={groupForm.rrpp_name} onChange={e => setGroupForm({ ...groupForm, rrpp_name: e.target.value })} maxLength={120} placeholder="Nombre del RR.PP." /><p className="form-note">Este nombre lo verán los responsables de este grupo al entrar con su código NAV.</p><label className="field-label">Contacto (opcional)</label><input className="input" value={groupForm.contact} onChange={e => setGroupForm({ ...groupForm, contact: e.target.value })} placeholder="Teléfono o correo interno" /><label className="field-label">Eventos a los que tendrá acceso</label><div className="checkbox-grid">{events.map(item => <label className="checkbox-option" key={item.id}><input type="checkbox" checked={groupForm.event_ids.includes(item.id)} onChange={e => setGroupForm({ ...groupForm, event_ids: e.target.checked ? [...groupForm.event_ids, item.id] : groupForm.event_ids.filter(id => id !== item.id) })} /><span><strong>{item.name}</strong><small>{dateTime(item.starts_at)}</small></span></label>)}</div>{events.length === 0 && <p className="form-note">Primero debes crear al menos un evento.</p>}<div className="form-note">El identificador se mostrará una sola vez al crear el grupo. Cópialo y entrégaselo al responsable por un canal privado.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowGroupForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy || events.length === 0 || groupForm.event_ids.length === 0}>{busy ? 'Guardando…' : groupForm.id ? 'Guardar cambios' : 'Crear grupo y generar código'}</button></div></form></div>}
 
-    {showAdminAttendeeForm && selectedEvent && <div className="modal-backdrop"><form className="modal-card" onSubmit={saveAdminAttendee}><div className="modal-head"><div><span className="eyebrow">{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'ENTRADAS SUELTAS' : 'CORRECCIÓN ADMINISTRATIVA'}</span><h2>{adminAttendeeForm.id ? 'Editar asistente' : adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'Añadir entrada suelta' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowAdminAttendeeForm(false)}>×</button></div>{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? <div className="loose-admin-note"><strong>Entrada suelta</strong><span>No aparecerá en el acceso de ningún grupo. Solo la puedes gestionar desde administración.</span></div> : <><label className="field-label">Grupo responsable</label><select className="input" value={adminAttendeeForm.group_id} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, group_id: e.target.value })} required>{selectedEvent.groups.map((g: GroupRecord) => <option key={g.id} value={g.id}>{g.label} — {g.responsible_name}</option>)}</select></>}<label className="field-label">Nombre y apellidos</label><input className="input" value={adminAttendeeForm.full_name} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, full_name: e.target.value })} required /><div className="form-two"><div><label className="field-label">Tipo</label><select className="input" value={adminAttendeeForm.document_type} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Documento</label><input className="input" value={adminAttendeeForm.document} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document: e.target.value.toUpperCase() })} required /></div></div><label className="field-label">Estado</label><select className="input" value={adminAttendeeForm.status} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, status: e.target.value as 'confirmed' | 'pending' })}><option value="confirmed">Confirmado</option><option value="pending">Pendiente</option></select><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowAdminAttendeeForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : adminAttendeeForm.id ? 'Guardar cambios' : 'Guardar'}</button></div></form></div>}
+    {showAdminAttendeeForm && selectedEvent && <div className="modal-backdrop"><form className="modal-card" onSubmit={saveAdminAttendee}><div className="modal-head"><div><span className="eyebrow">{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'ENTRADAS SUELTAS' : 'CORRECCIÓN ADMINISTRATIVA'}</span><h2>{adminAttendeeForm.id ? 'Editar asistente' : adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'Añadir entrada suelta' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowAdminAttendeeForm(false)}>×</button></div>{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? <div className="loose-admin-note"><strong>Entrada suelta</strong><span>No aparecerá en el acceso de ningún grupo. Solo la puedes gestionar desde administración.</span></div> : <><label className="field-label">Grupo responsable</label><select className="input" value={adminAttendeeForm.group_id} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, group_id: e.target.value })} required>{selectedEvent.groups.map((g: GroupRecord) => <option key={g.id} value={g.id}>{g.label} — {g.responsible_name}</option>)}</select></>}<label className="field-label">Nombre y apellidos</label><input className="input" value={adminAttendeeForm.full_name} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, full_name: e.target.value })} required /><div className="form-two"><div><label className="field-label">Tipo</label><select className="input" value={adminAttendeeForm.document_type} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Documento</label><input className="input" value={adminAttendeeForm.document} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document: e.target.value.toUpperCase() })} required /></div></div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowAdminAttendeeForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : adminAttendeeForm.id ? 'Guardar cambios' : 'Guardar'}</button></div></form></div>}
 
     {newCode && <div className="modal-backdrop"><div className="modal-card code-card"><button type="button" className="icon-button modal-corner" onClick={() => setNewCode('')}>×</button><div className="success-emblem">✓</div><span className="eyebrow">IDENTIFICADOR GENERADO</span><h2>{newCodeGroupLabel}</h2><p>Entrega este código al responsable por un canal privado. No volverá a mostrarse completo.</p><div className="generated-code">{newCode}</div><button className="button button-primary button-full" onClick={() => { void navigator.clipboard.writeText(newCode); notify('success', 'Identificador copiado.'); }}>Copiar identificador</button><button className="text-button code-close" onClick={() => setNewCode('')}>Ya lo he guardado</button></div></div>}
   </div>;
