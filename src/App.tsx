@@ -597,16 +597,16 @@ function AdminApp() {
   }
 
   if (authStage !== 'app') return <div className="admin-auth-shell">
-    <div className="admin-auth-top"><BrandMark compact /><a className="back-link" href="/">← Volver al portal</a></div>
-    <div className="admin-auth-card">
-      {authStage === 'checking' ? <div className="loading-panel"><div className="spinner" />Comprobando sesión…</div> : <>
-        <div className="admin-lock">⌑</div><span className="eyebrow">ADMINISTRACIÓN PRIVADA</span>
-        {authStage === 'login' && <><h1>Acceso a administración</h1><p>Accede con tu cuenta de administrador. Después te enviaremos un código al correo.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Comprobando…' : 'Continuar →'}</button></form></>}
-        {authStage === 'verify-email' && <><h1>Comprueba tu correo</h1><p>Hemos enviado un código de seis cifras a <strong>{maskedEmail || email}</strong>. Introdúcelo para acceder al panel.</p><form onSubmit={verifyEmailCode} className="stack-form"><label className="field-label">Código enviado por correo</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || emailCode.length !== 6}>{busy ? 'Verificando…' : 'Verificar y entrar'}</button></form><button type="button" className="text-button" disabled={busy} onClick={() => { void logoutAdmin(); }}>Volver al inicio de sesión</button></>}
+    <header className="admin-auth-top"><BrandMark compact /><a className="back-link" href="/">← Volver</a></header>
+    <main className="admin-auth-content">
+      {authStage === 'checking' ? <div className="loading-panel"><div className="spinner" />Comprobando sesión…</div> : <div className="admin-auth-form">
+        <span className="eyebrow">ADMINISTRACIÓN</span>
+        {authStage === 'login' && <><h1>Entrar al panel</h1><p>Accede con tu correo y contraseña. Después confirmarás la entrada con un código que te enviaremos por email.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Comprobando…' : 'Entrar'}</button></form></>}
+        {authStage === 'verify-email' && <><h1>Comprueba tu correo</h1><p>Te hemos enviado un código de seis cifras a <strong>{maskedEmail || email}</strong>. Escríbelo aquí para continuar.</p><form onSubmit={verifyEmailCode} className="stack-form"><label className="field-label">Código de seis cifras</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || emailCode.length !== 6}>{busy ? 'Verificando…' : 'Continuar'}</button></form><button type="button" className="text-button" disabled={busy} onClick={() => { void logoutAdmin(); }}>Volver</button></>}
         <NoticeBar notice={notice} clear={() => setNotice(null)} />
-      </>}
-      <div className="auth-bottom">Acceso restringido · Contraseña y código de un solo uso por correo.</div>
-    </div>
+        <div className="auth-bottom">TicketBaxe · © {new Date().getFullYear()}</div>
+      </div>}
+    </main>
   </div>;
 
   return <div className="app-shell admin-shell">
