@@ -43,7 +43,7 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
     <img className="brand-symbol" src="/ticketbaxe-mark.svg" alt="" aria-hidden="true" />
     <div className="brand-lockup">
       <div className="brand-name"><span className="brand-ticket">TICKET</span><span>BAXE</span></div>
-      <div className="brand-caption">GESTIÓN DE INVITADOS</div>
+      
     </div>
   </div>;
 }
@@ -162,30 +162,56 @@ function PortalApp() {
   const activeAttendees = attendees.filter(person => person.status !== 'cancelled');
   const confirmedCount = activeAttendees.filter(person => person.status === 'confirmed').length;
 
-  return <div className="app-shell portal-shell">
-    <header className="topbar"><BrandMark compact /><div className="topbar-right"><span className="topbar-tag">ACCESO PRIVADO</span>{group && <button className="button button-ghost button-small" onClick={logout}>Cerrar sesión</button>}</div></header>
-    <main className="main-wrap">
+  return <div className={`app-shell portal-shell ${group ? 'portal-authenticated' : 'portal-public'}`}>
+    <header className={`topbar ${group ? 'portal-sidebar' : 'public-header'}`}>
+      <BrandMark compact />
+      {group ? <>
+        <div className="sidebar-divider" />
+        <div className="sidebar-group">
+          <span>GRUPO</span>
+          <strong>{group.label}</strong>
+          <small>{group.responsible_name}</small>
+        </div>
+        <nav className="sidebar-nav">
+          <button type="button" className="sidebar-nav-link active" onClick={() => { setSelectedEvent(null); void loadPortal(token!); }}>
+            <span className="sidebar-nav-mark" /> Mis eventos
+          </button>
+        </nav>
+        <div className="sidebar-spacer" />
+        <div className="sidebar-footer">
+          <span>Sesión iniciada</span>
+          <button className="button button-ghost button-small" onClick={logout}>Cerrar sesión</button>
+        </div>
+      </> : <span className="public-header-label">Acceso de grupo</span>}
+    </header>
+    <main className={`main-wrap ${group ? 'portal-main' : 'portal-public-main'}`}>
       <NoticeBar notice={notice} clear={() => setNotice(null)} />
       {loading && !group && <div className="loading-panel"><div className="spinner" />Comprobando acceso…</div>}
       {!token && !loading && <section className="login-layout">
         <div className="login-copy">
-          <span className="eyebrow"><i className="status-dot" /> PORTAL DE RESPONSABLES</span>
-          <h1>La lista del grupo.<br /><em>Sin perder a nadie.</em></h1>
-          <p>Organiza quién viene, añade asistentes y mantén los datos al día. Aquí encontrarás únicamente los eventos que la organización ha asignado a tu grupo.</p>
-          <div className="feature-note"><span className="feature-index">01 / PRIVADO</span><span>Este acceso muestra únicamente los eventos y asistentes de tu grupo.</span></div>
+          <span className="eyebrow">ENTRAR</span>
+          <h1>Accede a la lista de tu grupo.</h1>
+          <p>Introduce el código que te han facilitado para consultar los eventos y actualizar la lista.</p>
         </div>
         <form className="login-card" onSubmit={handleLogin}>
-          <div className="card-kicker">ACCESO DE RESPONSABLE</div><h2>Entrar a mis listas</h2><p>Escribe el identificador que te ha entregado la organización.</p>
-          <label className="field-label" htmlFor="group-code">Identificador de acceso</label>
-          <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="NAV-XXXXXXXXXXXX" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
-          <button className="button button-primary button-full" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Entrar'}</button>
-          <div className="login-foot">¿No tienes tu identificador? Contacta con la organización.</div>
+          <div className="login-card-heading">
+            <h2>Código de acceso</h2>
+            <p>Escríbelo tal y como lo has recibido.</p>
+          </div>
+          <div className="login-entry">
+            <div>
+              <label className="field-label" htmlFor="group-code">Código del grupo</label>
+              <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="Introduce tu código" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
+            </div>
+            <button className="button button-primary" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Continuar'}</button>
+          </div>
+          <div className="login-foot">¿No tienes el código? Pídeselo a la persona que lleva tu grupo.</div>
         </form>
       </section>}
 
       {token && group && !selectedEvent && <>
-        <section className="welcome-row"><div><span className="eyebrow">ESPACIO DE RESPONSABLE</span><h1>Hola, {group.responsible_name.split(' ')[0]}.</h1><p>Gestionas el grupo <strong>{group.label}</strong>. Selecciona un evento para revisar tus asistentes.</p></div><div className="secure-chip"><span>●</span> Sesión privada</div></section>
-        <div className="section-heading"><div><h2>Tus eventos</h2><p>Solo aparecen los eventos asignados a tu identificador.</p></div><span className="count-chip">{events.length} eventos</span></div>
+        <section className="welcome-row"><div><span className="eyebrow">TU GRUPO</span><h1>Hola, {group.responsible_name.split(' ')[0]}.</h1><p>Estos son los eventos disponibles para <strong>{group.label}</strong>.</p></div></section>
+        <div className="section-heading"><div><h2>Eventos</h2><p>Elige uno para consultar o actualizar la lista.</p></div><span className="count-chip">{events.length} en total</span></div>
         {events.length === 0 ? <EmptyState title="Todavía no tienes eventos asignados" text="Contacta con la organización para que asigne eventos a tu grupo." /> : <div className="event-grid">
           {events.map(item => <button className="event-card" key={item.id} onClick={() => void openEvent(item)}>
             <div className="event-card-top"><span className="event-date-tag">{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}</span><StatusPill status={item.status} editable={item.editable} /></div>
@@ -198,7 +224,7 @@ function PortalApp() {
 
       {selectedEvent && <>
         <button className="back-link" onClick={() => { setSelectedEvent(null); setShowForm(false); void loadPortal(token!); }}>← Volver a mis eventos</button>
-        <section className="event-detail-header">{selectedEvent.poster_url && <img className="event-poster-detail" src={selectedEvent.poster_url} alt={`Cartel de ${selectedEvent.name}`} />}<div><span className="eyebrow">GESTIÓN DE ASISTENTES</span><h1>{selectedEvent.name}</h1><p>{dateTime(selectedEvent.starts_at)} <span className="dot-separator">·</span> Responsable: {group?.responsible_name}</p></div><StatusPill status={selectedEvent.status} editable={selectedEvent.editable} /></section>
+        <section className="event-detail-header">{selectedEvent.poster_url && <img className="event-poster-detail" src={selectedEvent.poster_url} alt={`Cartel de ${selectedEvent.name}`} />}<div><span className="eyebrow">LISTA DEL EVENTO</span><h1>{selectedEvent.name}</h1><p>{dateTime(selectedEvent.starts_at)} <span className="dot-separator">·</span> Responsable: {group?.responsible_name}</p></div><StatusPill status={selectedEvent.status} editable={selectedEvent.editable} /></section>
         <div className="detail-stats"><div><span>Asistentes de tu grupo</span><strong>{activeAttendees.length}</strong></div><div><span>Entradas confirmadas</span><strong>{confirmedCount}</strong></div><div><span>Plazo de modificación</span><strong className="stat-date">{dateTime(selectedEvent.deadline_at)}</strong></div></div>
         {!selectedEvent.editable && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
         <div className="section-heading attendee-heading"><div><h2>Personas de tu grupo</h2><p>Cada persona activa cuenta como una entrada. Añade también al responsable si va a asistir.</p></div>{selectedEvent.editable && <button className="button button-primary" onClick={startNew}>＋ Añadir asistente</button>}</div>
@@ -567,7 +593,21 @@ function AdminApp() {
   </div>;
 
   return <div className="app-shell admin-shell">
-    <header className="topbar"><BrandMark compact /><div className="topbar-right"><span className="admin-name">ADMINISTRADOR</span><button className="button button-ghost button-small" onClick={logoutAdmin}>Cerrar sesión</button></div></header>
+    <header className="topbar admin-sidebar">
+      <BrandMark compact />
+      <div className="sidebar-divider" />
+      <div className="sidebar-section-label">ADMINISTRACIÓN</div>
+      <nav className="admin-tabs admin-side-tabs">
+        <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><span className="sidebar-nav-mark" />Eventos</button>
+        <button className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}><span className="sidebar-nav-mark" />Grupos</button>
+        <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}><span className="sidebar-nav-mark" />Actividad</button>
+      </nav>
+      <div className="sidebar-spacer" />
+      <div className="sidebar-footer">
+        <div className="sidebar-user"><span className="sidebar-avatar">A</span><span><strong>Administrador</strong><small>Sesión activa</small></span></div>
+        <button className="button button-ghost button-small" onClick={logoutAdmin}>Cerrar sesión</button>
+      </div>
+    </header>
     <main className="main-wrap admin-main"><NoticeBar notice={notice} clear={() => setNotice(null)} />
       {selectedEvent ? <>
         <button className="back-link" onClick={() => { setSelectedEvent(null); void loadDashboard(); }}>← Volver al panel</button>
@@ -592,12 +632,11 @@ function AdminApp() {
         <div className="section-heading"><div><h2>Grupos asignados</h2><p>Responsables que pueden gestionar este evento.</p></div></div>
         <div className="group-chip-grid">{selectedEvent.groups.map((g: GroupRecord) => <div className="group-mini-card" key={g.id}><strong>{g.label}</strong><span>{g.responsible_name}</span><small>{g.active ? `Código terminado en ${g.code_last4}` : 'Acceso bloqueado'}</small></div>)}</div>
       </> : <>
-        <div className="admin-title-row"><div><span className="eyebrow">TICKETBAXE / ADMINISTRACIÓN</span><h1>Gestión de eventos</h1><p>Eventos, responsables y listas oficiales.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
-        <nav className="admin-tabs"><button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Eventos</button><button className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}>Grupos y accesos</button><button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>Historial de actividad</button></nav>
+        <div className="admin-title-row"><div><span className="eyebrow">TICKETBAXE</span><h1>Eventos</h1><p>Crea eventos y consulta sus listas.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
         {tab === 'dashboard' && <>
           <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div></div>
           <div className="section-heading"><div><h2>Calendario de eventos</h2><p>Abre cualquier evento para revisar las listas y generar su versión oficial.</p></div><button className="text-button" onClick={() => void loadDashboard()}>↻ Actualizar</button></div>
-          {events.length === 0 ? <EmptyState title="Todavía no has creado eventos" text="Crea el primer concierto o evento navideño para empezar." /> : <div className="admin-event-list">{events.map(item => <button className="admin-event-row" key={item.id} onClick={() => void openAdminEvent(item)}>
+          {events.length === 0 ? <EmptyState title="Todavía no has creado eventos" text="Crea el primer evento para empezar a organizar la lista." /> : <div className="admin-event-list">{events.map(item => <button className="admin-event-row" key={item.id} onClick={() => void openAdminEvent(item)}>
             <div className="admin-event-date"><strong>{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit' })}</strong><span>{new Date(item.starts_at).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span></div>
             <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados</span></div>
             <div className="admin-event-count"><strong>{item.attendee_count ?? 0}</strong><span>asistentes</span></div>
@@ -606,7 +645,7 @@ function AdminApp() {
           </button>)}</div>}
         </>}
         {tab === 'groups' && <>
-          <div className="section-heading"><div><h2>Responsables y grupos</h2><p>Cada responsable recibe un identificador privado para gestionar sus invitados.</p></div><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); }}>＋ Crear grupo</button></div>
+          <div className="section-heading"><div><h2>Grupos</h2><p>Personas que pueden entrar y modificar su lista.</p></p></div><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); }}>＋ Crear grupo</button></div>
           {groups.length === 0 ? <EmptyState title="No hay grupos creados" text="Crea un grupo, asígnale eventos y entrega su identificador al responsable." /> : <div className="group-list">{groups.map(group => <div className="group-row" key={group.id}><div className="group-avatar">{group.label.slice(0, 1).toUpperCase()}</div><div className="group-row-info"><strong>{group.label}</strong><span>{group.responsible_name}{group.contact ? ` · ${group.contact}` : ''}</span><small>Código terminado en {group.code_last4} · {group.event_ids.length} eventos asignados</small></div><span className={`group-active ${group.active ? 'is-active' : 'is-disabled'}`}>{group.active ? 'Activo' : 'Bloqueado'}</span><div className="row-actions"><button className="text-button" onClick={() => editGroup(group)}>Editar</button><button className="text-button" onClick={() => void regenerateCode(group)}>Renovar código</button><button className="text-button" onClick={() => void toggleGroup(group)}>{group.active ? 'Bloquear' : 'Activar'}</button></div></div>)}</div>}
         </>}
         {tab === 'audit' && <>
@@ -617,7 +656,7 @@ function AdminApp() {
     </main>
     <footer className="footer"><span>© {new Date().getFullYear()} · TicketBaxe</span><span>Acceso verificado por correo · Datos cifrados</span></footer>
 
-    {showEventForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createOrUpdateEvent}><div className="modal-head"><div><span className="eyebrow">CALENDARIO</span><h2>{eventForm.id ? 'Editar evento' : 'Crear evento'}</h2></div><button type="button" className="icon-button" onClick={() => setShowEventForm(false)}>×</button></div><label className="field-label">Nombre del evento</label><input className="input" value={eventForm.name} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} required maxLength={120} placeholder="Ej. Concierto Navidad · 19 de diciembre" /><label className="field-label">Descripción (opcional)</label><textarea className="input textarea" value={eventForm.description} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} maxLength={800} placeholder="Información adicional para los responsables" /><div className="form-two"><div><label className="field-label">Fecha y hora del evento</label><input className="input" type="datetime-local" value={eventForm.starts_at} onChange={e => setEventForm({ ...eventForm, starts_at: e.target.value })} required /></div><div><label className="field-label">Límite para modificar listas</label><input className="input" type="datetime-local" value={eventForm.deadline_at} onChange={e => setEventForm({ ...eventForm, deadline_at: e.target.value })} required /></div></div><label className="field-label">Aforo máximo (opcional)</label><input className="input" type="number" min="1" max="100000" value={eventForm.capacity} onChange={e => setEventForm({ ...eventForm, capacity: e.target.value })} placeholder="Dejar vacío si no hay límite" /><label className="field-label">Cartel del evento (JPG, PNG o WEBP · máximo 5 MB)</label><input className="input" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPosterFile(e.target.files?.[0] ?? null)} />{eventForm.poster_url && !posterFile && <div className="poster-current"><img src={eventForm.poster_url} alt="Cartel actual" /><span>Cartel actual guardado</span></div>}<label className="checkbox-option publish-option"><input type="checkbox" checked={eventForm.is_published} onChange={e => setEventForm({ ...eventForm, is_published: e.target.checked })} /><span><strong>Evento visible para los responsables</strong><small>Desmarca para ocultarlo sin eliminarlo ni perder sus listas.</small></span></label><div className="form-note">La hora se interpreta en la zona horaria del navegador (España peninsular). El servidor bloqueará las modificaciones al llegar al límite.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowEventForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : eventForm.id ? 'Guardar cambios' : 'Guardar evento'}</button></div></form></div>}
+    {showEventForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createOrUpdateEvent}><div className="modal-head"><div><span className="eyebrow">CALENDARIO</span><h2>{eventForm.id ? 'Editar evento' : 'Crear evento'}</h2></div><button type="button" className="icon-button" onClick={() => setShowEventForm(false)}>×</button></div><label className="field-label">Nombre del evento</label><input className="input" value={eventForm.name} onChange={e => setEventForm({ ...eventForm, name: e.target.value })} required maxLength={120} placeholder="Ej. Concierto · 19 de diciembre" /><label className="field-label">Descripción (opcional)</label><textarea className="input textarea" value={eventForm.description} onChange={e => setEventForm({ ...eventForm, description: e.target.value })} maxLength={800} placeholder="Información adicional para los responsables" /><div className="form-two"><div><label className="field-label">Fecha y hora del evento</label><input className="input" type="datetime-local" value={eventForm.starts_at} onChange={e => setEventForm({ ...eventForm, starts_at: e.target.value })} required /></div><div><label className="field-label">Límite para modificar listas</label><input className="input" type="datetime-local" value={eventForm.deadline_at} onChange={e => setEventForm({ ...eventForm, deadline_at: e.target.value })} required /></div></div><label className="field-label">Aforo máximo (opcional)</label><input className="input" type="number" min="1" max="100000" value={eventForm.capacity} onChange={e => setEventForm({ ...eventForm, capacity: e.target.value })} placeholder="Dejar vacío si no hay límite" /><label className="field-label">Cartel del evento (JPG, PNG o WEBP · máximo 5 MB)</label><input className="input" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPosterFile(e.target.files?.[0] ?? null)} />{eventForm.poster_url && !posterFile && <div className="poster-current"><img src={eventForm.poster_url} alt="Cartel actual" /><span>Cartel actual guardado</span></div>}<label className="checkbox-option publish-option"><input type="checkbox" checked={eventForm.is_published} onChange={e => setEventForm({ ...eventForm, is_published: e.target.checked })} /><span><strong>Evento visible para los responsables</strong><small>Desmarca para ocultarlo sin eliminarlo ni perder sus listas.</small></span></label><div className="form-note">La hora se interpreta en la zona horaria del navegador (España peninsular). El servidor bloqueará las modificaciones al llegar al límite.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowEventForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : eventForm.id ? 'Guardar cambios' : 'Guardar evento'}</button></div></form></div>}
 
     {showGroupForm && <div className="modal-backdrop"><form className="modal-card modal-wide" onSubmit={createGroup}><div className="modal-head"><div><span className="eyebrow">RESPONSABLES</span><h2>{groupForm.id ? 'Editar grupo' : 'Crear grupo'}</h2></div><button type="button" className="icon-button" onClick={() => setShowGroupForm(false)}>×</button></div><label className="field-label">Nombre del grupo</label><input className="input" value={groupForm.label} onChange={e => setGroupForm({ ...groupForm, label: e.target.value })} required placeholder="Ej. Grupo Juan" /><label className="field-label">Nombre del responsable</label><input className="input" value={groupForm.responsible_name} onChange={e => setGroupForm({ ...groupForm, responsible_name: e.target.value })} required placeholder="Nombre y apellidos" /><label className="field-label">Contacto (opcional)</label><input className="input" value={groupForm.contact} onChange={e => setGroupForm({ ...groupForm, contact: e.target.value })} placeholder="Teléfono o correo interno" /><label className="field-label">Eventos a los que tendrá acceso</label><div className="checkbox-grid">{events.map(item => <label className="checkbox-option" key={item.id}><input type="checkbox" checked={groupForm.event_ids.includes(item.id)} onChange={e => setGroupForm({ ...groupForm, event_ids: e.target.checked ? [...groupForm.event_ids, item.id] : groupForm.event_ids.filter(id => id !== item.id) })} /><span><strong>{item.name}</strong><small>{dateTime(item.starts_at)}</small></span></label>)}</div>{events.length === 0 && <p className="form-note">Primero debes crear al menos un evento.</p>}<div className="form-note">El identificador se mostrará una sola vez al crear el grupo. Cópialo y entrégaselo al responsable por un canal privado.</div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowGroupForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy || events.length === 0 || groupForm.event_ids.length === 0}>{busy ? 'Guardando…' : groupForm.id ? 'Guardar cambios' : 'Crear grupo y generar código'}</button></div></form></div>}
 
