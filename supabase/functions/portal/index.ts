@@ -77,7 +77,7 @@ Deno.serve(async (req: Request) => {
         .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('id', eventId).eq('is_published', true).maybeSingle();
       if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
       const { data: rows, error: rowsError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, created_at, updated_at')
+        .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, created_at, updated_at')
         .eq('event_id', eventId).eq('group_id', group.id).order('created_at');
       if (rowsError) throw new HttpError('No se han podido cargar los asistentes.', 500);
       const attendees = [];
