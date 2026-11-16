@@ -663,7 +663,7 @@ function AdminApp() {
       const snapshot = result.snapshot;
       const rows = (snapshot.records ?? []).map((person: any) => ({
         Evento: snapshot.event?.name ?? '', Responsable: person.group_label, Nombre: person.full_name,
-        Numero_entrada: person.entry_number ?? '', Tipo_documento: person.document_type, Documento: person.document,
+        Numero_entrada: person.entry_number ?? '', Precio_EUR: person.price_paid ?? '', Tipo_documento: person.document_type, Documento: person.document,
         Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
       }));
       downloadCsv(`${(snapshot.event?.name ?? 'evento').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-oficial-v${snapshot.version}.csv`, rows);
@@ -679,9 +679,9 @@ function AdminApp() {
       const result = await adminApi<{ snapshot: any }>('download_snapshot', { snapshot_id: snapshotId });
       const snapshot = result.snapshot;
       const escape = (value: unknown) => { const replacements: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }; return String(value ?? '').replace(/[&<>"']/g, char => replacements[char] ?? char); };
-      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${person.entry_number ?? '—'}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
+      const rows = (snapshot.records ?? []).map((person: any) => `<tr><td>${escape(person.group_label)}</td><td>${escape(person.full_name)}</td><td>${person.entry_number ?? '—'}</td><td>${person.price_paid == null ? '—' : Number(person.price_paid).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'}</td><td>${escape(person.document_type)}</td><td>${escape(person.document)}</td><td>${person.status === 'confirmed' ? 'Confirmado' : 'Pendiente'}</td><td>${person.paid ? 'Pagado' : 'Pendiente'}</td></tr>`).join('');
       printWindow.onload = () => printWindow.print();
-      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>N.º entrada</th><th>Tipo</th><th>Documento</th><th>Estado</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
+      printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Lista oficial ${escape(snapshot.event?.name)}</title><style>body{font:12px Arial,sans-serif;color:#18243a;padding:28px}h1{font-size:22px;margin:0 0 6px}p{color:#59667a;margin:4px 0 18px}.meta{font-size:11px;color:#69758a;margin-bottom:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border:1px solid #d8dee7;font-size:11px}th{background:#eef1f5;text-transform:uppercase;font-size:9px;letter-spacing:.05em}.foot{margin-top:18px;color:#8b95a5;font-size:9px}@media print{body{padding:0}}</style></head><body><h1>${escape(snapshot.event?.name ?? 'Lista oficial')}</h1><p>${escape(dateTime(snapshot.event?.starts_at ?? ''))} · Versión oficial V${snapshot.version}</p><div class="meta">Generada: ${escape(dateTime(snapshot.generated_at ?? snapshot.created_at))} · ${snapshot.records?.length ?? 0} personas</div><table><thead><tr><th>Grupo</th><th>Nombre y apellidos</th><th>N.º entrada</th><th>Precio</th><th>Tipo</th><th>Documento</th><th>Estado</th><th>Pago</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">Documento interno de organización. Contiene datos personales; conserva y distribuye con acceso restringido.</div></body></html>`);
       printWindow.document.close();
     } catch (error) { printWindow.close(); notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -691,7 +691,7 @@ function AdminApp() {
     if (!selectedEvent) return;
     const rows = (selectedEvent.attendees ?? []).filter((p: Attendee) => p.status !== 'cancelled').map((person: Attendee) => ({
       Grupo: person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? '',
-      Nombre: person.full_name, Numero_entrada: person.entry_number ?? '', Tipo_documento: person.document_type, Documento: person.document,
+      Nombre: person.full_name, Numero_entrada: person.entry_number ?? '', Precio_EUR: person.price_paid ?? '', Tipo_documento: person.document_type, Documento: person.document,
       Estado: person.status === 'confirmed' ? 'Confirmado' : 'Pendiente', Pago: person.paid ? 'Pagado' : 'Pendiente',
     }));
     if (!rows.length) { notify('info', 'No hay asistentes activos para exportar.'); return; }
