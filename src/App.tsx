@@ -43,7 +43,7 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
     <img className="brand-symbol" src="/ticketbaxe-mark.svg" alt="" aria-hidden="true" />
     <div className="brand-lockup">
       <div className="brand-name"><span className="brand-ticket">TICKET</span><span>BAXE</span></div>
-      <div className="brand-caption">EVENTOS · LISTAS · ACCESOS</div>
+      <div className="brand-caption">GESTIÓN DE INVITADOS</div>
     </div>
   </div>;
 }
@@ -170,15 +170,15 @@ function PortalApp() {
       {!token && !loading && <section className="login-layout">
         <div className="login-copy">
           <span className="eyebrow"><i className="status-dot" /> PORTAL DE RESPONSABLES</span>
-          <h1>Tus invitados.<br /><em>Tu lista, siempre al día.</em></h1>
-          <p>Gestiona las personas de tu grupo para cada concierto y evento de Navidad. Puedes modificar los datos hasta la fecha límite indicada.</p>
-          <div className="feature-note"><span className="feature-icon">✓</span><span>Tu identificador solo permite acceder a los eventos asignados a tu grupo.</span></div>
+          <h1>La lista del grupo.<br /><em>Sin perder a nadie.</em></h1>
+          <p>Organiza quién viene, añade asistentes y mantén los datos al día. Aquí encontrarás únicamente los eventos que la organización ha asignado a tu grupo.</p>
+          <div className="feature-note"><span className="feature-index">01 / PRIVADO</span><span>Este acceso muestra únicamente los eventos y asistentes de tu grupo.</span></div>
         </div>
         <form className="login-card" onSubmit={handleLogin}>
-          <div className="card-kicker">ÁREA PRIVADA</div><h2>Entrar a mis listas</h2><p>Introduce el identificador que te ha facilitado la organización.</p>
+          <div className="card-kicker">ACCESO DE RESPONSABLE</div><h2>Entrar a mis listas</h2><p>Escribe el identificador que te ha entregado la organización.</p>
           <label className="field-label" htmlFor="group-code">Identificador de acceso</label>
           <input id="group-code" className="input input-code" autoComplete="off" autoCapitalize="characters" placeholder="NAV-XXXXXXXXXXXX" value={loginCode} onChange={e => setLoginCode(e.target.value.toUpperCase())} required />
-          <button className="button button-primary button-full" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Acceder a mis listas'} <span>→</span></button>
+          <button className="button button-primary button-full" disabled={loading || loginCode.trim().length < 8}>{loading ? 'Entrando…' : 'Entrar'}</button>
           <div className="login-foot">¿No tienes tu identificador? Contacta con la organización.</div>
         </form>
       </section>}
@@ -207,7 +207,7 @@ function PortalApp() {
         </tbody></table></div><div className="table-foot">Los datos se guardan en el servidor. Las personas canceladas se conservan en el historial, pero no cuentan como entrada.</div></div>}
       </>}
     </main>
-    <footer className="footer"><span>© {new Date().getFullYear()} · Listas privadas de eventos</span><span>Protección de datos · Acceso restringido</span></footer>
+    <footer className="footer"><span>© {new Date().getFullYear()} TicketBaxe</span><span>Listas de asistentes · Acceso privado</span></footer>
 
     {showForm && selectedEvent && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setShowForm(false); }}><form className="modal-card" onSubmit={saveAttendee}>
       <div className="modal-head"><div><span className="eyebrow">{form.id ? 'MODIFICAR REGISTRO' : 'NUEVA PERSONA'}</span><h2>{form.id ? 'Editar asistente' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}>×</button></div>
@@ -558,7 +558,7 @@ function AdminApp() {
     <div className="admin-auth-card">
       {authStage === 'checking' ? <div className="loading-panel"><div className="spinner" />Comprobando sesión…</div> : <>
         <div className="admin-lock">⌑</div><span className="eyebrow">ADMINISTRACIÓN PRIVADA</span>
-        {authStage === 'login' && <><h1>Panel de control</h1><p>Accede con tu cuenta de administrador. Después te enviaremos un código al correo.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Comprobando…' : 'Continuar →'}</button></form></>}
+        {authStage === 'login' && <><h1>Acceso a administración</h1><p>Accede con tu cuenta de administrador. Después te enviaremos un código al correo.</p><form onSubmit={handleAdminLogin} className="stack-form"><label className="field-label">Correo electrónico</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="username" /><label className="field-label">Contraseña</label><input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /><button className="button button-primary button-full" disabled={busy}>{busy ? 'Comprobando…' : 'Continuar →'}</button></form></>}
         {authStage === 'verify-email' && <><h1>Comprueba tu correo</h1><p>Hemos enviado un código de seis cifras a <strong>{maskedEmail || email}</strong>. Introdúcelo para acceder al panel.</p><form onSubmit={verifyEmailCode} className="stack-form"><label className="field-label">Código enviado por correo</label><input className="input input-totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required /><button className="button button-primary button-full" disabled={busy || emailCode.length !== 6}>{busy ? 'Verificando…' : 'Verificar y entrar'}</button></form><button type="button" className="text-button" disabled={busy} onClick={() => { void logoutAdmin(); }}>Volver al inicio de sesión</button></>}
         <NoticeBar notice={notice} clear={() => setNotice(null)} />
       </>}
@@ -592,7 +592,7 @@ function AdminApp() {
         <div className="section-heading"><div><h2>Grupos asignados</h2><p>Responsables que pueden gestionar este evento.</p></div></div>
         <div className="group-chip-grid">{selectedEvent.groups.map((g: GroupRecord) => <div className="group-mini-card" key={g.id}><strong>{g.label}</strong><span>{g.responsible_name}</span><small>{g.active ? `Código terminado en ${g.code_last4}` : 'Acceso bloqueado'}</small></div>)}</div>
       </> : <>
-        <div className="admin-title-row"><div><span className="eyebrow">CENTRO DE CONTROL</span><h1>Panel de administración</h1><p>Controla los eventos, los grupos y las listas oficiales.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
+        <div className="admin-title-row"><div><span className="eyebrow">TICKETBAXE / ADMINISTRACIÓN</span><h1>Gestión de eventos</h1><p>Eventos, responsables y listas oficiales.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
         <nav className="admin-tabs"><button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}>Eventos</button><button className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')}>Grupos y accesos</button><button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>Historial de actividad</button></nav>
         {tab === 'dashboard' && <>
           <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div></div>
