@@ -13,7 +13,7 @@ type EventRecord = {
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string; status: 'pending' | 'confirmed' };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -38,6 +38,16 @@ function clearPortalSession(): void {
 }
 
 const emptyAttendee: AttendeeForm = { id: '', full_name: '', document_type: 'DNI', document: '', status: 'confirmed' };
+
+function formatEuro(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return 'Sin registrar';
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'Sin registrar';
+}
+
+function isNominativeLocked(person: Attendee): boolean {
+  return person.paid === true && person.entry_number !== null && person.entry_number !== undefined;
+}
 
 function App() {
   if (!hasSupabaseConfig) return <SetupNotice />;
@@ -317,6 +327,7 @@ function AdminApp() {
   const [groups, setGroups] = useState<GroupRecord[]>([]); const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [entryNumberDrafts, setEntryNumberDrafts] = useState<Record<string, string>>({});
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [showEventForm, setShowEventForm] = useState(false); const [showGroupForm, setShowGroupForm] = useState(false);
   const [showAdminAttendeeForm, setShowAdminAttendeeForm] = useState(false); const [adminAttendeeForm, setAdminAttendeeForm] = useState<AttendeeForm & { group_id: string }>({ ...emptyAttendee, group_id: '' });
   const [newCode, setNewCode] = useState(''); const [newCodeGroupLabel, setNewCodeGroupLabel] = useState('');
@@ -439,6 +450,7 @@ function AdminApp() {
 
   async function openAdminEvent(item: EventRecord) {
     setEntryNumberDrafts({});
+    setPriceDrafts({});
     setBusy(true);
     try { const data = await adminApi<any>('event_detail', { event_id: item.id }); setSelectedEvent(data); setReopenDeadline(toLocalInput(new Date(Date.now() + 60 * 60 * 1000).toISOString())); }
     catch (error) { notify('error', (error as Error).message); }
@@ -601,6 +613,27 @@ function AdminApp() {
       await adminApi('set_attendee_entry_number', { attendee_id: person.id, entry_number: entryNumber });
       await openAdminEvent(selectedEvent.event);
       notify('success', entryNumber === null ? 'Número de entrada retirado.' : `Entrada número ${entryNumber} asignada a ${person.full_name}.`);
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function saveAttendeePrice(person: Attendee) {
+    if (!selectedEvent) return;
+    const raw = (priceDrafts[person.id] ?? String(person.price_paid ?? '')).trim();
+    let pricePaid: number | null = null;
+    if (raw !== '') {
+      pricePaid = Number(raw);
+      if (!Number.isFinite(pricePaid) || pricePaid < 0 || pricePaid > 99999999.99 || Math.abs(pricePaid * 100 - Math.round(pricePaid * 100)) > 0.000001) {
+        notify('error', 'Introduce un importe válido en euros, con un máximo de dos decimales.');
+        return;
+      }
+      pricePaid = Math.round(pricePaid * 100) / 100;
+    }
+    setBusy(true);
+    try {
+      await adminApi('set_attendee_price', { attendee_id: person.id, price_paid: pricePaid });
+      await openAdminEvent(selectedEvent.event);
+      notify('success', pricePaid === null ? 'Importe retirado.' : `Importe de ${formatEuro(pricePaid)} guardado para ${person.full_name}.`);
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
   }
