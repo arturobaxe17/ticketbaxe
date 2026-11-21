@@ -754,7 +754,7 @@ function AdminApp() {
     try {
       const isLooseEntry = adminAttendeeForm.group_id === selectedEvent.loose_group?.id;
       const result = await adminApi<{ attendee: { payment_reset?: boolean; entry_number_reset?: boolean } }>('save_attendee', { event_id: selectedEvent.event.id, group_id: adminAttendeeForm.group_id, attendee: { id: adminAttendeeForm.id || undefined, full_name: adminAttendeeForm.full_name, document_type: adminAttendeeForm.document_type, document: adminAttendeeForm.document } });
-      setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event);
+      setShowAdminAttendeeForm(false); await openAdminEvent(selectedEvent.event); await loadDashboard();
       const resetMessages = [
         result.attendee?.payment_reset ? 'el pago vuelve a estar pendiente' : '',
         result.attendee?.entry_number_reset ? 'el número de entrada anterior se ha retirado' : '',
