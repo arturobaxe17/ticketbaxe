@@ -128,7 +128,6 @@ function historyChangeLines(details: Record<string, any> | undefined): string[] 
     return label + ' actualizado.';
   });
   if (lines.length) return lines;
-  if (details.full_name) return ['Nombre registrado: ' + details.full_name];
   if (details.previous_price !== undefined || details.price_paid !== undefined) {
     return ['Precio: ' + formatEuro(details.previous_price) + ' → ' + formatEuro(details.price_paid)];
   }
@@ -138,7 +137,11 @@ function historyChangeLines(details: Record<string, any> | undefined): string[] 
   if (details.previous_paid !== undefined || details.paid !== undefined) {
     return ['Pago: ' + (details.previous_paid ? 'Pagado' : 'Pendiente') + ' → ' + (details.paid ? 'Pagado' : 'Pendiente')];
   }
+  if (details.previous_status !== undefined || details.status !== undefined) {
+    return ['Estado: ' + String(details.previous_status ?? '—') + ' → ' + String(details.status ?? '—')];
+  }
   if (details.identity_changed) return ['Se modificaron datos de identificación. El detalle de campos no estaba disponible para este cambio antiguo.'];
+  if (details.full_name) return ['Nombre registrado: ' + details.full_name];
   return ['Actividad registrada.'];
 }
 
@@ -161,6 +164,7 @@ function AttendeeHistoryModal({
         : <div className="history-list">{entries.map(entry => <article className="history-item" key={entry.id}>
           <div className="history-item-head"><strong>{historyActionTitle(entry.action)}</strong><time>{dateTime(entry.created_at)}</time></div>
           <span className="history-actor">{entry.actor_label}</span>
+          {entry.details?.admin_override === true && <span className="history-exception">Ajuste excepcional de administración</span>}
           <ul>{historyChangeLines(entry.details).map((line, index) => <li key={index}>{line}</li>)}</ul>
         </article>)}</div>}
       <div className="modal-actions"><button type="button" className="button button-light" onClick={onClose}>Cerrar</button></div>
