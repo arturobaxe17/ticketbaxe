@@ -960,7 +960,7 @@ function AdminApp() {
               <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
               <td><span className="document-type">{person.document_type}</span> {person.document}</td>
               <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
-              <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
+              <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}<div className="row-actions"><button type="button" className="info-icon-button" onClick={() => void openAdminAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></>}</div></td>
             </tr>;
           })}
           {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={7} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
@@ -1000,7 +1000,7 @@ function AdminApp() {
                     <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
                     <td><span className="document-type">{person.document_type}</span> {person.document}</td>
                           <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
-                    <td className="action-cell">{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <div className="row-actions"><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></div>}</td>
+                    <td className="action-cell"><div className="row-actions"><button type="button" className="info-icon-button" onClick={() => void openAdminAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></>}</div></td>
                   </tr>;
                 })}
               </tbody>
@@ -1055,11 +1055,13 @@ function AdminPriceEditor({
   onSave: () => void;
 }) {
   const priceFixed = Boolean(person.price_frozen_at);
+  const [editingFixed, setEditingFixed] = useState(false);
   const original = person.price_paid === null || person.price_paid === undefined ? '' : String(person.price_paid);
-  if (priceFixed) {
+  if (priceFixed && !editingFixed) {
     return <div className="price-fixed">
       <strong>{formatEuro(person.price_paid)}</strong>
-      <small>Fijado</small>
+      <small>Fijado · nominativa</small>
+      <button type="button" className="text-button price-exception-link" disabled={busy || person.status === 'cancelled'} onClick={() => { onChange(original); setEditingFixed(true); }}>Modificar (excepción)</button>
     </div>;
   }
   return <div className="price-editor">
@@ -1078,8 +1080,9 @@ function AdminPriceEditor({
       type="button" className="text-button price-save"
       onClick={onSave}
       disabled={busy || person.status === 'cancelled' || value.trim() === original}
-    >Guardar</button>
-    {isNominativeLocked(person) && <small className="price-legacy-note">Completa el importe pendiente para fijarlo</small>}
+    >{priceFixed ? 'Guardar excepción' : 'Guardar'}</button>
+    {priceFixed && <button type="button" className="text-button" onClick={() => { onChange(original); setEditingFixed(false); }} disabled={busy}>Cancelar</button>}
+    {!priceFixed && isNominativeLocked(person) && <small className="price-legacy-note">El precio se fijará al completar el pago y la entrada</small>}
   </div>;
 }
 
