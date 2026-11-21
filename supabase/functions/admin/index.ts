@@ -515,7 +515,7 @@ Deno.serve(async (req: Request) => {
       }
       const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
-      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, price_paid: attendee.price_paid } });
+      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_paid: attendee.paid, paid, price_paid: attendee.price_paid } });
       return json(req, { ok: true, paid });
     }
 
@@ -606,12 +606,12 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'cancel_attendee') {
       const attendeeId = String(body.attendee_id ?? '');
-      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name').eq('id', attendeeId).maybeSingle();
+      const { data: attendee } = await db.from('attendees').select('id, event_id, group_id, full_name, status').eq('id', attendeeId).maybeSingle();
       if (!attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
       await eventIsEditable(db, attendee.event_id);
       const { error } = await db.from('attendees').update({ status: 'cancelled', updated_by_type: 'admin' }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo cancelar el asistente.', 500);
-      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: 'attendee.cancelled_by_admin', details: { attendee_id: attendeeId } });
+      await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: 'attendee.cancelled_by_admin', details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_status: attendee.status, status: 'cancelled' } });
       return json(req, { ok: true });
     }
 
