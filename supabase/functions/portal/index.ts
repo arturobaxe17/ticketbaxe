@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
       const attendees = [];
       for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
       event.editable = event.status === 'open' && !event.is_paused && !group.is_paused && new Date(event.deadline_at).getTime() > Date.now();
-      return json(req, { ok: true, event, attendees });
+      return json(req, { ok: true, event, attendees, group });
     }
 
     if (action === 'save_attendee') {
