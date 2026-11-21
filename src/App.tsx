@@ -7,7 +7,7 @@ type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
   capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean; is_paused?: boolean;
-  attendee_count?: number; group_count?: number; settlement_total?: number;
+  attendee_count?: number; group_count?: number; settlement_total?: number; has_official_snapshot?: boolean;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string };
@@ -227,7 +227,8 @@ function PortalApp() {
     if (!token) return;
     setLoading(true); setNotice(null);
     try {
-      const response = await portalApi<{ event: EventRecord; attendees: Attendee[] }>('event', { event_id: item.id }, token);
+      const response = await portalApi<{ event: EventRecord; attendees: Attendee[]; group?: any }>('event', { event_id: item.id }, token);
+      if (response.group) setGroup(response.group);
       setSelectedEvent(response.event); setAttendees(response.attendees ?? []); setShowForm(false);
     } catch (error) { notify('error', (error as Error).message); }
     finally { setLoading(false); }
