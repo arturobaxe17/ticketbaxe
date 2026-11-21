@@ -236,7 +236,7 @@ export async function getAttendeeHistory(
   const groupLabels = new Map<string, string>();
   if (groupIds.length) {
     const { data: groups } = await db.from('groups').select('id, label, responsible_name').in('id', groupIds);
-    for (const group of groups ?? []) groupLabels.set(group.id, group.label || group.responsible_name || 'Grupo');
+    for (const group of groups ?? []) groupLabels.set(group.id, group.responsible_name && group.label ? `${group.responsible_name} · ${group.label}` : group.responsible_name || group.label || 'Grupo');
   }
   return {
     attendee: { id: attendee.id, full_name: attendee.full_name },
