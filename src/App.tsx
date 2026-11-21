@@ -7,7 +7,7 @@ type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
   capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean; is_paused?: boolean;
-  attendee_count?: number; group_count?: number;
+  attendee_count?: number; group_count?: number; settlement_total?: number;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string };
@@ -458,6 +458,9 @@ function AdminApp() {
   const [passwordSessionToken, setPasswordSessionToken] = useState(''); const [emailChallengeTicket, setEmailChallengeTicket] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [notice, setNotice] = useState<Notice>(null); const [busy, setBusy] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyName, setHistoryName] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [tab, setTab] = useState<'dashboard' | 'groups' | 'audit'>('dashboard');
   const [events, setEvents] = useState<EventRecord[]>([]); const [activeGroups, setActiveGroups] = useState(0);
   const [groups, setGroups] = useState<GroupRecord[]>([]); const [auditEntries, setAuditEntries] = useState<any[]>([]);
@@ -582,6 +585,15 @@ function AdminApp() {
     catch (error) { notify('error', (error as Error).message); }
   }
 
+  async function openAdminAttendeeHistory(person: Attendee) {
+    setHistoryName(person.full_name); setHistoryEntries([]); setHistoryLoading(true);
+    try {
+      const result = await adminApi<{ history: HistoryEntry[] }>('attendee_history', { attendee_id: person.id });
+      setHistoryEntries(result.history ?? []);
+    } catch (error) { notify('error', (error as Error).message); setHistoryName(''); }
+    finally { setHistoryLoading(false); }
+  }
+
   useEffect(() => { if (authStage === 'app') { if (tab === 'dashboard') void loadDashboard(); if (tab === 'groups') void loadGroups(); if (tab === 'audit') void loadAudit(); } }, [authStage, tab]);
 
   async function openAdminEvent(item: EventRecord) {
@@ -670,6 +682,34 @@ function AdminApp() {
     finally { setBusy(false); }
   }
 
+  async function toggleGroupPause(group: GroupRecord) {
+    const paused = !group.is_paused;
+    setBusy(true);
+    try {
+      await adminApi('set_group_paused', { group_id: group.id, paused });
+      await loadGroups();
+      notify('success', paused ? 'Grupo pausado. Puede consultar, pero no modificar.' : 'Grupo reanudado.');
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleEventPause() {
+    if (!selectedEvent) return;
+    const paused = !selectedEvent.event.is_paused;
+    const prompt = paused
+      ? 'Se bloquearán temporalmente las modificaciones de todos los grupos en este evento. ¿Pausarlo?'
+      : 'Los responsables podrán volver a editar sus listas. ¿Reanudar este evento?';
+    if (!window.confirm(prompt)) return;
+    setBusy(true);
+    try {
+      await adminApi('set_event_paused', { event_id: selectedEvent.event.id, paused });
+      await openAdminEvent(selectedEvent.event);
+      await loadDashboard();
+      notify('success', paused ? 'Evento pausado. Los grupos solo pueden consultar.' : 'Evento reanudado.');
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function closeEvent() {
     if (!selectedEvent) return;
     if (!window.confirm('Se bloquearán las modificaciones y se creará una versión oficial de la lista. ¿Cerrar este evento?')) return;
@@ -729,7 +769,7 @@ function AdminApp() {
     setBusy(true);
     try {
       await adminApi('set_attendee_paid', { attendee_id: person.id, paid: !person.paid });
-      await openAdminEvent(selectedEvent.event);
+      await openAdminEvent(selectedEvent.event); await loadDashboard();
       notify('success', person.paid ? 'Pago marcado como pendiente.' : 'Asistente marcado como pagado.');
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -767,8 +807,9 @@ function AdminApp() {
     }
     setBusy(true);
     try {
-      await adminApi('set_attendee_price', { attendee_id: person.id, price_paid: pricePaid });
-      await openAdminEvent(selectedEvent.event);
+      if (person.price_frozen_at && pricePaid !== Number(person.price_paid) && !window.confirm('Vas a cambiar excepcionalmente el precio de una entrada nominativa. El responsable seguirá sin poder editarla y este cambio quedará en el historial. ¿Continuar?')) return;
+      await adminApi('set_attendee_price', { attendee_id: person.id, price_paid: pricePaid, admin_override: Boolean(person.price_frozen_at) });
+      await openAdminEvent(selectedEvent.event); await loadDashboard();
       notify('success', pricePaid === null ? 'Importe retirado.' : `Importe de ${formatEuro(pricePaid)} guardado para ${person.full_name}.`);
     } catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
@@ -777,7 +818,7 @@ function AdminApp() {
   async function cancelAdminAttendee(person: Attendee) {
     if (!window.confirm(`¿Cancelar a ${person.full_name}?`)) return;
     setBusy(true);
-    try { await adminApi('cancel_attendee', { attendee_id: person.id }); await openAdminEvent(selectedEvent.event); notify('success', 'Asistente cancelado.'); }
+    try { await adminApi('cancel_attendee', { attendee_id: person.id }); await openAdminEvent(selectedEvent.event); await loadDashboard(); notify('success', 'Asistente cancelado.'); }
     catch (error) { notify('error', (error as Error).message); }
     finally { setBusy(false); }
   }
@@ -824,6 +865,21 @@ function AdminApp() {
     downloadCsv(`${selectedEvent.event.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-lista-provisional.csv`, rows);
   }
 
+  const settlementRows = selectedEvent ? (() => {
+    const totals = new Map<string, { label: string; count: number; total: number }>();
+    for (const person of selectedEvent.attendees as Attendee[]) {
+      if (person.status === 'cancelled' || person.paid !== true || person.price_paid == null) continue;
+      const key = person.is_loose ? 'loose' : person.group_id;
+      const label = person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? 'Grupo';
+      const current = totals.get(key) ?? { label, count: 0, total: 0 };
+      current.count += 1;
+      current.total += Number(person.price_paid);
+      totals.set(key, current);
+    }
+    return [...totals.entries()].map(([id, value]) => ({ id, ...value }));
+  })() : [];
+  const settlementTotal = settlementRows.reduce((sum, item) => sum + item.total, 0);
+
   async function logoutAdmin() {
     await adminApi('logout_admin_session').catch(() => undefined);
     sessionStorage.removeItem('ticketbaxe_admin_email_session');
@@ -863,14 +919,17 @@ function AdminApp() {
     <main className="main-wrap admin-main"><NoticeBar notice={notice} clear={() => setNotice(null)} />
       {selectedEvent ? <>
         <button className="back-link" onClick={() => { setSelectedEvent(null); void loadDashboard(); }}>← Volver al panel</button>
-        <section className="event-detail-header admin-detail-header"><div><span className="eyebrow">DETALLE DEL EVENTO</span><h1>{selectedEvent.event.name}</h1><p>{dateTime(selectedEvent.event.starts_at)} <span className="dot-separator">·</span> Cierre: {dateTime(selectedEvent.event.deadline_at)}</p></div><StatusPill status={selectedEvent.event.status} editable={selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now()} /></section>
+        <section className="event-detail-header admin-detail-header"><div><span className="eyebrow">DETALLE DEL EVENTO</span><h1>{selectedEvent.event.name}</h1><p>{dateTime(selectedEvent.event.starts_at)} <span className="dot-separator">·</span> Cierre: {dateTime(selectedEvent.event.deadline_at)}</p></div><StatusPill status={selectedEvent.event.status} editable={selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now()} paused={selectedEvent.event.is_paused} /></section>
         <div className="detail-stats"><div><span>Asistentes activos</span><strong>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled').length}</strong></div><div><span>Grupos asignados</span><strong>{selectedEvent.groups.length}</strong></div><div><span>Aforo</span><strong className="stat-date">{selectedEvent.event.capacity ?? 'Sin límite'}</strong></div></div>
+        <section className="settlement-panel"><div className="settlement-total"><span>{selectedEvent.event.status === 'closed' ? 'TOTAL A LIQUIDAR' : 'TOTAL PROVISIONAL'}</span><strong>{formatEuro(settlementTotal)}</strong><small>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled' && p.paid === true && p.price_paid != null).length} entradas pagadas incluidas</small></div><div className="settlement-groups"><strong>Desglose por grupo</strong>{settlementRows.length ? settlementRows.map(item => <div className="settlement-group-row" key={item.id}><span>{item.label} <small>{item.count} entradas</small></span><strong>{formatEuro(item.total)}</strong></div>) : <span className="empty-inline">Todavía no hay entradas pagadas con importe registrado.</span>}</div></section>
         <div className="admin-action-row">
+          {selectedEvent.event.status === 'open' && <button className={`button ${selectedEvent.event.is_paused ? 'button-primary' : 'button-light'}`} onClick={() => void toggleEventPause()} disabled={busy}>{selectedEvent.event.is_paused ? '▶ Reanudar modificaciones' : 'Ⅱ Pausar modificaciones'}</button>}
           <button className="button button-light" onClick={() => editEvent(selectedEvent.event)}>Editar datos del evento</button>
           {selectedEvent.event.status === 'open' ? <button className="button button-primary" onClick={() => void closeEvent()} disabled={busy}>🔒 Cerrar y generar lista oficial</button> : selectedEvent.event.status === 'closed' ? <button className="button button-primary" onClick={() => void publishSnapshot()} disabled={busy}>＋ Publicar nueva versión oficial</button> : <span className="pill pill-red">Evento cancelado</span>}
           <button className="button button-light" onClick={downloadWorkingList}>Descargar lista provisional CSV</button>
           <button className="button button-danger-light" onClick={() => void cancelEvent()} disabled={selectedEvent.event.status === 'cancelled' || busy}>Cancelar evento</button>
         </div>
+        {selectedEvent.event.is_paused && <div className="pause-banner admin-pause-banner"><span>Ⅱ</span><div><strong>Modificaciones pausadas temporalmente.</strong><p>Los responsables pueden consultar las listas, pero no modificarlas. La administración puede seguir trabajando.</p></div></div>}
         {selectedEvent.event.status !== 'open' && selectedEvent.event.status !== 'cancelled' && <div className="reopen-panel"><div><strong>¿Necesitas abrirlo de nuevo?</strong><p>La versión oficial actual no se modifica. Al cerrar otra vez se generará una versión nueva.</p></div><div className="reopen-controls"><input type="datetime-local" className="input" value={reopenDeadline} onChange={e => setReopenDeadline(e.target.value)} /><button className="button button-light" onClick={() => void reopenEvent()} disabled={busy}>Reabrir evento</button></div></div>}
         <div className="section-heading"><div><h2>Listas de grupo</h2><p>Personas apuntadas por los responsables. Sus datos identificativos solo se muestran aquí.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && selectedEvent.groups.length > 0 && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir a un grupo</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
@@ -954,18 +1013,18 @@ function AdminApp() {
       </> : <>
         <div className="admin-title-row"><div><span className="eyebrow">TICKETBAXE</span><h1>Eventos</h1><p>Crea eventos y consulta sus listas.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', rrpp_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
         {tab === 'dashboard' && <>
-          <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div></div>
+          <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div><div className="overview-card"><span>TOTAL A LIQUIDAR</span><strong>{formatEuro(events.filter(event => event.status === 'closed').reduce((sum, event) => sum + Number(event.settlement_total ?? 0), 0))}</strong><small>Eventos cerrados · entradas pagadas</small></div></div>
           <div className="section-heading"><div><h2>Calendario de eventos</h2><p>Abre cualquier evento para revisar las listas y generar su versión oficial.</p></div><button className="text-button" onClick={() => void loadDashboard()}>↻ Actualizar</button></div>
           {events.length === 0 ? <EmptyState title="Todavía no has creado eventos" text="Crea el primer evento para empezar a organizar la lista." /> : <div className="admin-event-list">{events.map(item => <button className="admin-event-row" key={item.id} onClick={() => void openAdminEvent(item)}>
             <div className="admin-event-date"><strong>{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit' })}</strong><span>{new Date(item.starts_at).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span></div>
-            <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados</span></div>
+            <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados · {item.status === 'closed' ? 'A liquidar: ' : 'Provisional: '}{formatEuro(item.settlement_total ?? 0)}</span></div>
             <div className="admin-event-count"><strong>{item.attendee_count ?? 0}</strong><span>asistentes</span></div>
-            <StatusPill status={item.status} editable={item.status === 'open' && new Date(item.deadline_at).getTime() > Date.now()} /><b className="row-arrow">→</b>
+            <StatusPill status={item.status} editable={item.status === 'open' && new Date(item.deadline_at).getTime() > Date.now()} paused={item.is_paused} /><b className="row-arrow">→</b>
           </button>)}</div>}
         </>}
         {tab === 'groups' && <>
           <div className="section-heading"><div><h2>Grupos</h2><p>Personas que pueden entrar y modificar su lista.</p></div><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', rrpp_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); }}>＋ Crear grupo</button></div>
-          {groups.length === 0 ? <EmptyState title="No hay grupos creados" text="Crea un grupo, asígnale eventos y entrega su identificador al responsable." /> : <div className="group-list">{groups.map(group => <div className="group-row" key={group.id}><div className="group-avatar">{group.label.slice(0, 1).toUpperCase()}</div><div className="group-row-info"><strong>{group.label}</strong><span>{group.responsible_name}{group.contact ? ` · ${group.contact}` : ''}</span><small>RR.PP.: {group.rrpp_name?.trim() || 'Sin asignar'} · Código terminado en {group.code_last4} · {group.event_ids.length} eventos</small></div><span className={`group-active ${group.active ? 'is-active' : 'is-disabled'}`}>{group.active ? 'Activo' : 'Bloqueado'}</span><div className="row-actions"><button className="text-button" onClick={() => editGroup(group)}>Editar</button><button className="text-button" onClick={() => void regenerateCode(group)}>Renovar código</button><button className="text-button" onClick={() => void toggleGroup(group)}>{group.active ? 'Bloquear' : 'Activar'}</button></div></div>)}</div>}
+          {groups.length === 0 ? <EmptyState title="No hay grupos creados" text="Crea un grupo, asígnale eventos y entrega su identificador al responsable." /> : <div className="group-list">{groups.map(group => <div className="group-row" key={group.id}><div className="group-avatar">{group.label.slice(0, 1).toUpperCase()}</div><div className="group-row-info"><strong>{group.label}</strong><span>{group.responsible_name}{group.contact ? ` · ${group.contact}` : ''}</span><small>RR.PP.: {group.rrpp_name?.trim() || 'Sin asignar'} · Código terminado en {group.code_last4} · {group.event_ids.length} eventos</small></div><span className={`group-active ${group.active ? 'is-active' : 'is-disabled'}`}>{group.active ? 'Activo' : 'Bloqueado'}</span>{group.is_paused && <span className="pause-chip">Pausado</span>}<div className="row-actions"><button className="text-button" onClick={() => editGroup(group)}>Editar</button><button className="text-button" onClick={() => void regenerateCode(group)}>Renovar código</button><button className="text-button" onClick={() => void toggleGroupPause(group)} disabled={busy}>{group.is_paused ? 'Reanudar' : 'Pausar'}</button><button className="text-button" onClick={() => void toggleGroup(group)}>{group.active ? 'Bloquear acceso' : 'Activar acceso'}</button></div></div>)}</div>}
         </>}
         {tab === 'audit' && <>
           <div className="section-heading"><div><h2>Actividad reciente</h2><p>Registro de cambios, accesos y cierres realizados en la plataforma.</p></div><button className="text-button" onClick={() => void loadAudit()}>↻ Actualizar</button></div>
@@ -981,6 +1040,7 @@ function AdminApp() {
 
     {showAdminAttendeeForm && selectedEvent && <div className="modal-backdrop"><form className="modal-card" onSubmit={saveAdminAttendee}><div className="modal-head"><div><span className="eyebrow">{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'ENTRADAS SUELTAS' : 'CORRECCIÓN ADMINISTRATIVA'}</span><h2>{adminAttendeeForm.id ? 'Editar asistente' : adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? 'Añadir entrada suelta' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowAdminAttendeeForm(false)}>×</button></div>{adminAttendeeForm.group_id === selectedEvent.loose_group?.id ? <div className="loose-admin-note"><strong>Entrada suelta</strong><span>No aparecerá en el acceso de ningún grupo. Solo la puedes gestionar desde administración.</span></div> : <><label className="field-label">Grupo responsable</label><select className="input" value={adminAttendeeForm.group_id} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, group_id: e.target.value })} required>{selectedEvent.groups.map((g: GroupRecord) => <option key={g.id} value={g.id}>{g.label} — {g.responsible_name}</option>)}</select></>}<label className="field-label">Nombre y apellidos</label><input className="input" value={adminAttendeeForm.full_name} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, full_name: e.target.value })} required /><div className="form-two"><div><label className="field-label">Tipo</label><select className="input" value={adminAttendeeForm.document_type} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document_type: e.target.value as Attendee['document_type'] })}><option value="DNI">DNI</option><option value="NIE">NIE</option><option value="PASSPORT">Pasaporte</option></select></div><div><label className="field-label">Documento</label><input className="input" value={adminAttendeeForm.document} onChange={e => setAdminAttendeeForm({ ...adminAttendeeForm, document: e.target.value.toUpperCase() })} required /></div></div><div className="modal-actions"><button type="button" className="button button-light" onClick={() => setShowAdminAttendeeForm(false)}>Cancelar</button><button className="button button-primary" disabled={busy}>{busy ? 'Guardando…' : adminAttendeeForm.id ? 'Guardar cambios' : 'Guardar'}</button></div></form></div>}
 
+    {historyName && <AttendeeHistoryModal attendeeName={historyName} entries={historyEntries} loading={historyLoading} onClose={() => setHistoryName('')} />}
     {newCode && <div className="modal-backdrop"><div className="modal-card code-card"><button type="button" className="icon-button modal-corner" onClick={() => setNewCode('')}>×</button><div className="success-emblem">✓</div><span className="eyebrow">IDENTIFICADOR GENERADO</span><h2>{newCodeGroupLabel}</h2><p>Entrega este código al responsable por un canal privado. No volverá a mostrarse completo.</p><div className="generated-code">{newCode}</div><button className="button button-primary button-full" onClick={() => { void navigator.clipboard.writeText(newCode); notify('success', 'Identificador copiado.'); }}>Copiar identificador</button><button className="text-button code-close" onClick={() => setNewCode('')}>Ya lo he guardado</button></div></div>}
   </div>;
 }
