@@ -871,14 +871,17 @@ function AdminApp() {
   }
 
   const settlementRows = selectedEvent ? (() => {
-    const totals = new Map<string, { label: string; count: number; total: number }>();
+    const totals = new Map<string, { label: string; count: number; total: number; missing: number }>();
     for (const person of selectedEvent.attendees as Attendee[]) {
-      if (person.status === 'cancelled' || person.paid !== true || person.price_paid == null) continue;
+      if (person.status === 'cancelled' || person.paid !== true) continue;
       const key = person.is_loose ? 'loose' : person.group_id;
       const label = person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? 'Grupo';
-      const current = totals.get(key) ?? { label, count: 0, total: 0 };
-      current.count += 1;
-      current.total += Number(person.price_paid);
+      const current = totals.get(key) ?? { label, count: 0, total: 0, missing: 0 };
+      if (person.price_paid == null) current.missing += 1;
+      else {
+        current.count += 1;
+        current.total += Number(person.price_paid);
+      }
       totals.set(key, current);
     }
     return [...totals.entries()].map(([id, value]) => ({ id, ...value }));
@@ -927,7 +930,7 @@ function AdminApp() {
         <button className="back-link" onClick={() => { setSelectedEvent(null); void loadDashboard(); }}>← Volver al panel</button>
         <section className="event-detail-header admin-detail-header"><div><span className="eyebrow">DETALLE DEL EVENTO</span><h1>{selectedEvent.event.name}</h1><p>{dateTime(selectedEvent.event.starts_at)} <span className="dot-separator">·</span> Cierre: {dateTime(selectedEvent.event.deadline_at)}</p></div><StatusPill status={selectedEvent.event.status} editable={selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now()} paused={selectedEvent.event.is_paused} /></section>
         <div className="detail-stats"><div><span>Asistentes activos</span><strong>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled').length}</strong></div><div><span>Grupos asignados</span><strong>{selectedEvent.groups.length}</strong></div><div><span>Aforo</span><strong className="stat-date">{selectedEvent.event.capacity ?? 'Sin límite'}</strong></div></div>
-        <section className="settlement-panel"><div className="settlement-total"><span>{(selectedEvent.event.status === 'closed' || selectedEvent.snapshots?.length > 0) ? 'TOTAL A LIQUIDAR' : 'TOTAL PROVISIONAL'}</span><strong>{formatEuro(settlementTotal)}</strong><small>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled' && p.paid === true && p.price_paid != null).length} entradas pagadas incluidas</small>{missingSettlementPriceCount > 0 && <span className="settlement-warning">⚠ {missingSettlementPriceCount} entradas pagadas sin precio; no incluidas en el total.</span>}</div><div className="settlement-groups"><strong>Desglose por grupo</strong>{settlementRows.length ? settlementRows.map(item => <div className="settlement-group-row" key={item.id}><span>{item.label} <small>{item.count} entradas</small></span><strong>{formatEuro(item.total)}</strong></div>) : <span className="empty-inline">Todavía no hay entradas pagadas con importe registrado.</span>}</div></section>
+        <section className="settlement-panel"><div className="settlement-total"><span>{(selectedEvent.event.status === 'closed' || selectedEvent.snapshots?.length > 0) ? 'TOTAL A LIQUIDAR' : 'TOTAL PROVISIONAL'}</span><strong>{formatEuro(settlementTotal)}</strong><small>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled' && p.paid === true && p.price_paid != null).length} entradas pagadas incluidas</small>{missingSettlementPriceCount > 0 && <span className="settlement-warning">⚠ {missingSettlementPriceCount} entradas pagadas sin precio; no incluidas en el total.</span>}</div><div className="settlement-groups"><strong>Desglose por grupo</strong>{settlementRows.length ? settlementRows.map(item => <div className="settlement-group-row" key={item.id}><span>{item.label} <small>{item.count} incluidas{item.missing > 0 ? ` · ${item.missing} pagadas sin precio` : ''}</small></span><strong>{formatEuro(item.total)}</strong></div>) : <span className="empty-inline">Todavía no hay entradas pagadas con importe registrado.</span>}</div></section>
         <div className="admin-action-row">
           {selectedEvent.event.status === 'open' && <button className={`button ${selectedEvent.event.is_paused ? 'button-primary' : 'button-light'}`} onClick={() => void toggleEventPause()} disabled={busy}>{selectedEvent.event.is_paused ? '▶ Reanudar modificaciones' : 'Ⅱ Pausar modificaciones'}</button>}
           <button className="button button-light" onClick={() => editEvent(selectedEvent.event)}>Editar datos del evento</button>
