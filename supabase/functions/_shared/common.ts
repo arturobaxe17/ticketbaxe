@@ -203,17 +203,49 @@ export async function documentHash(normalized: string): Promise<string> {
 
 export async function writeAudit(
   db: SupabaseClient,
-  values: { actor_type: 'admin' | 'group' | 'system'; actor_id?: string | null; group_id?: string | null; event_id?: string | null; action: string; details?: Record<string, unknown> },
+  values: { actor_type: 'admin' | 'group' | 'system'; actor_id?: string | null; group_id?: string | null; event_id?: string | null; attendee_id?: string | null; action: string; details?: Record<string, unknown> },
 ): Promise<void> {
+  const detailAttendeeId = typeof values.details?.attendee_id === 'string' ? values.details.attendee_id : null;
   const { error } = await db.from('audit_log').insert({
     actor_type: values.actor_type,
     actor_id: values.actor_id ?? null,
     group_id: values.group_id ?? null,
     event_id: values.event_id ?? null,
+    attendee_id: values.attendee_id ?? detailAttendeeId,
     action: values.action,
     details: values.details ?? {},
   });
   if (error) console.error('No se pudo guardar auditoría:', error.message);
+}
+
+export async function getAttendeeHistory(
+  db: SupabaseClient,
+  attendeeId: string,
+  permittedGroupId?: string,
+): Promise<{ attendee: { id: string; full_name: string }; history: Record<string, unknown>[] }> {
+  const { data: attendee, error: attendeeError } = await db.from('attendees')
+    .select('id, event_id, group_id, full_name').eq('id', attendeeId).maybeSingle();
+  if (attendeeError || !attendee || (permittedGroupId && attendee.group_id !== permittedGroupId)) {
+    throw new HttpError('No puedes consultar el historial de esta entrada.', 404, 'ATTENDEE_NOT_FOUND');
+  }
+  const { data: rows, error } = await db.from('audit_log')
+    .select('id, actor_type, group_id, action, details, created_at')
+    .eq('attendee_id', attendeeId).order('created_at', { ascending: false }).limit(100);
+  if (error) throw new HttpError('No se pudo cargar el historial de esta entrada.', 500);
+  const groupIds = [...new Set((rows ?? []).filter((row: any) => row.actor_type === 'group' && row.group_id).map((row: any) => row.group_id))];
+  const groupLabels = new Map<string, string>();
+  if (groupIds.length) {
+    const { data: groups } = await db.from('groups').select('id, label, responsible_name').in('id', groupIds);
+    for (const group of groups ?? []) groupLabels.set(group.id, group.label || group.responsible_name || 'Grupo');
+  }
+  return {
+    attendee: { id: attendee.id, full_name: attendee.full_name },
+    history: (rows ?? []).map((row: any) => ({
+      id: row.id, actor_type: row.actor_type,
+      actor_label: row.actor_type === 'admin' ? 'Administración' : row.actor_type === 'system' ? 'Sistema' : 'Responsable · ' + (groupLabels.get(row.group_id) ?? 'Grupo'),
+      action: row.action, details: row.details ?? {}, created_at: row.created_at,
+    })),
+  };
 }
 
 export async function decryptAttendee(row: Record<string, any>): Promise<Record<string, unknown>> {
@@ -253,15 +285,21 @@ export async function getGroupSession(req: Request, db: SupabaseClient): Promise
     throw new HttpError('El acceso ha caducado. Vuelve a introducir tu identificador.', 401, 'PORTAL_AUTH');
   }
   const { data: group } = await db.from('groups')
-    .select('id, label, responsible_name, rrpp_name, contact, active')
+    .select('id, label, responsible_name, rrpp_name, contact, active, is_paused')
     .eq('id', session.group_id).maybeSingle();
   if (!group?.active) throw new HttpError('Este identificador ha sido desactivado. Contacta con la organización.', 403, 'GROUP_DISABLED');
   return { sessionId: session.id, group };
 }
 
-export async function eventIsEditable(db: SupabaseClient, eventId: string): Promise<Record<string, any>> {
+export async function eventIsEditable(db: SupabaseClient, eventId: string, groupId?: string): Promise<Record<string, any>> {
   const { data: event, error } = await db.from('events').select('*').eq('id', eventId).maybeSingle();
   if (error || !event) throw new HttpError('No se ha encontrado el evento.', 404, 'EVENT_NOT_FOUND');
+  if (groupId) {
+    const { data: group, error: groupError } = await db.from('groups').select('is_paused').eq('id', groupId).maybeSingle();
+    if (groupError || !group) throw new HttpError('No se ha encontrado el grupo.', 404, 'GROUP_NOT_FOUND');
+    if (group.is_paused) throw new HttpError('Este grupo está pausado por administración. Puedes consultar la lista, pero no modificarla.', 409, 'GROUP_PAUSED');
+    if (event.is_paused) throw new HttpError('Este evento está pausado por administración. Puedes consultar la lista, pero no modificarla.', 409, 'EVENT_PAUSED');
+  }
   if (event.status !== 'open' || new Date(event.deadline_at).getTime() <= Date.now()) {
     throw new HttpError('El plazo de modificación de este evento ha terminado.', 409, 'EVENT_CLOSED');
   }
@@ -273,6 +311,7 @@ export async function storeAttendee(
   input: Record<string, unknown>,
   groupId: string,
   actorType: 'admin' | 'group',
+  adminActorId?: string | null,
 ): Promise<Record<string, unknown>> {
   const eventId = typeof input.event_id === 'string' ? input.event_id : '';
   if (!eventId) throw new HttpError('Falta seleccionar el evento.');
@@ -287,7 +326,7 @@ export async function storeAttendee(
 
   if (id) {
     const { data: existing, error: existingError } = await db.from('attendees')
-      .select('id, group_id, event_id, full_name, document_type, document_hash, paid, entry_number, price_paid, price_frozen_at')
+      .select('id, group_id, event_id, full_name, document_type, document_hash, status, paid, entry_number, price_paid, price_frozen_at')
       .eq('id', id).maybeSingle();
     if (existingError || !existing || existing.group_id !== groupId || existing.event_id !== eventId) {
       throw new HttpError('No puedes modificar este asistente.', 404, 'ATTENDEE_NOT_FOUND');
@@ -316,16 +355,20 @@ export async function storeAttendee(
       if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
       throw new HttpError('No se pudo guardar el asistente. Revisa los datos e inténtalo de nuevo.', 500);
     }
+    const changes: Record<string, unknown> = {};
+    if (existing.full_name !== fullName) changes.full_name = { before: existing.full_name, after: fullName };
+    if (existing.document_type !== documentType) changes.document_type = { before: existing.document_type, after: documentType };
+    if (existing.document_hash !== hash) changes.document = { changed: true };
+    if (existing.status !== status) changes.status = { before: existing.status, after: status };
+    if (identityChanged && existing.paid === true) changes.paid = { before: true, after: false };
+    if (identityChanged && existing.entry_number !== null) changes.entry_number = { before: existing.entry_number, after: null };
     await writeAudit(db, {
-      actor_type: actorType, actor_id: groupId, group_id: groupId, event_id: eventId,
+      actor_type: actorType, actor_id: actorType === 'admin' ? (adminActorId ?? null) : groupId,
+      group_id: groupId, event_id: eventId, attendee_id: id,
       action: 'attendee.updated',
-      details: {
-        attendee_id: id,
-        status,
-        identity_changed: identityChanged,
-        payment_reset: identityChanged && existing.paid === true,
-        entry_number_reset: identityChanged && existing.entry_number !== null,
-      },
+      details: { attendee_id: id, full_name: fullName, fields_changed: Object.keys(changes), changes,
+        identity_changed: identityChanged, payment_reset: identityChanged && existing.paid === true,
+        entry_number_reset: identityChanged && existing.entry_number !== null },
     });
     return {
       ...data,
@@ -345,7 +388,7 @@ export async function storeAttendee(
     if (error.message.includes('CAPACITY_REACHED')) throw new HttpError('Se ha alcanzado el aforo máximo del evento.', 409, 'CAPACITY_REACHED');
     throw new HttpError('No se pudo guardar el asistente. Revisa los datos e inténtalo de nuevo.', 500);
   }
-  await writeAudit(db, { actor_type: actorType, actor_id: groupId, group_id: groupId, event_id: eventId, action: 'attendee.created', details: { attendee_id: data.id, status } });
+  await writeAudit(db, { actor_type: actorType, actor_id: actorType === 'admin' ? (adminActorId ?? null) : groupId, group_id: groupId, event_id: eventId, attendee_id: data.id, action: 'attendee.created', details: { attendee_id: data.id, full_name: fullName, document_type: documentType } });
   return { ...data, document: normalized };
 }
 
