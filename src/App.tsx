@@ -185,6 +185,9 @@ function PortalApp() {
   const [loading, setLoading] = useState(Boolean(token));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyName, setHistoryName] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const notify = (kind: NonNullable<Notice>['kind'], text: string) => setNotice({ kind, text });
 
@@ -271,9 +274,19 @@ function PortalApp() {
     finally { setSaving(false); }
   }
 
+  async function openAttendeeHistory(person: Attendee) {
+    if (!token) return;
+    setHistoryName(person.full_name); setHistoryEntries([]); setHistoryLoading(true);
+    try {
+      const result = await portalApi<{ history: HistoryEntry[] }>('attendee_history', { attendee_id: person.id }, token);
+      setHistoryEntries(result.history ?? []);
+    } catch (error) { notify('error', (error as Error).message); setHistoryName(''); }
+    finally { setHistoryLoading(false); }
+  }
+
   async function logout() {
     if (token) await portalApi('logout', {}, token).catch(() => undefined);
-    clearPortalSession(); setToken(null); setGroup(null); setEvents([]); setSelectedEvent(null); setAttendees([]);
+    clearPortalSession(); setToken(null); setGroup(null); setEvents([]); setSelectedEvent(null); setAttendees([]); setHistoryName(''); setHistoryEntries([]);
   }
 
   const activeAttendees = attendees.filter(person => person.status !== 'cancelled');
@@ -303,10 +316,11 @@ function PortalApp() {
     </header>
     <main className={`main-wrap ${group ? 'portal-main' : 'portal-public-main'}`}>
       <NoticeBar notice={notice} clear={() => setNotice(null)} />
-      {token && group && <div className="group-duty-note">
+      {token && group && !group.is_paused && <div className="group-duty-note">
         <span className="group-duty-icon" aria-hidden="true">i</span>
         <p><strong>Tu función:</strong> mantener al día la lista de tu grupo. La organización se encarga de la venta y el cobro de las entradas.</p>
       </div>}
+      {token && group?.is_paused && <div className="pause-banner"><span>Ⅱ</span><div><strong>Grupo pausado por administración.</strong><p>Puedes consultar las listas y su historial, pero no añadir, editar ni cancelar asistentes hasta que se reanude el grupo.</p></div></div>}
       {loading && !group && <div className="loading-panel"><div className="spinner" />Comprobando acceso…</div>}
       {!token && !loading && <section className="access-hero">
         <div className="access-copy">
@@ -393,19 +407,20 @@ function PortalApp() {
         <div className="section-heading"><div><h2>Eventos</h2><p>Elige uno para consultar o actualizar la lista.</p></div><span className="count-chip">{events.length} en total</span></div>
         {events.length === 0 ? <EmptyState title="Todavía no tienes eventos asignados" text="Contacta con la organización para que asigne eventos a tu grupo." /> : <div className="event-grid">
           {events.map(item => <button className="event-card" key={item.id} onClick={() => void openEvent(item)}>
-            <div className="event-card-top"><span className="event-date-tag">{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}</span><StatusPill status={item.status} editable={item.editable} /></div>
+            <div className="event-card-top"><span className="event-date-tag">{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}</span><StatusPill status={item.status} editable={item.editable} paused={item.is_paused || group?.is_paused} /></div>
             {item.poster_url && <img className="event-poster-thumb" src={item.poster_url} alt={`Cartel de ${item.name}`} />}<h3>{item.name}</h3><p className="event-date-full">{dateTime(item.starts_at)}</p>
             <div className="event-card-bottom"><span><strong>{item.group_attendee_count ?? 0}</strong> en tu grupo</span>{item.capacity ? <span>{item.total_attendee_count ?? 0}/{item.capacity} plazas</span> : <span>Sin aforo indicado</span>}<b>→</b></div>
-            {item.editable ? <div className="deadline-line">Modificable hasta {dateTime(item.deadline_at)}</div> : <div className="deadline-line deadline-closed">Plazo de edición finalizado</div>}
+            {item.editable ? <div className="deadline-line">Modificable hasta {dateTime(item.deadline_at)}</div> : <div className="deadline-line deadline-closed">{item.is_paused || group?.is_paused ? 'Pausado por administración' : 'Plazo de edición finalizado'}</div>}
           </button>)}
         </div>}
       </>}
 
       {selectedEvent && <>
         <button className="back-link" onClick={() => { setSelectedEvent(null); setShowForm(false); void loadPortal(token!); }}>← Volver a mis eventos</button>
-        <section className="event-detail-header">{selectedEvent.poster_url && <img className="event-poster-detail" src={selectedEvent.poster_url} alt={`Cartel de ${selectedEvent.name}`} />}<div><span className="eyebrow">LISTA DEL EVENTO</span><h1>{selectedEvent.name}</h1><p>{dateTime(selectedEvent.starts_at)} <span className="dot-separator">·</span> RR.PP.: {group?.rrpp_name?.trim() || 'Pendiente de asignar'}</p></div><StatusPill status={selectedEvent.status} editable={selectedEvent.editable} /></section>
+        <section className="event-detail-header">{selectedEvent.poster_url && <img className="event-poster-detail" src={selectedEvent.poster_url} alt={`Cartel de ${selectedEvent.name}`} />}<div><span className="eyebrow">LISTA DEL EVENTO</span><h1>{selectedEvent.name}</h1><p>{dateTime(selectedEvent.starts_at)} <span className="dot-separator">·</span> RR.PP.: {group?.rrpp_name?.trim() || 'Pendiente de asignar'}</p></div><StatusPill status={selectedEvent.status} editable={selectedEvent.editable} paused={selectedEvent.is_paused || group?.is_paused} /></section>
         <div className="detail-stats"><div><span>Asistentes de tu grupo</span><strong>{activeAttendees.length}</strong></div><div><span>Entradas pagadas</span><strong>{paidCount}</strong></div><div><span>Plazo de modificación</span><strong className="stat-date">{dateTime(selectedEvent.deadline_at)}</strong></div></div>
-        {!selectedEvent.editable && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
+        {!selectedEvent.editable && !selectedEvent.is_paused && !group?.is_paused && <div className="locked-banner"><span>🔒</span><div><strong>La edición está cerrada.</strong><p>La organización ha cerrado este evento o ha terminado el plazo. Contacta con ella si necesitas solicitar un cambio.</p></div></div>}
+        {selectedEvent.is_paused && <div className="pause-banner"><span>Ⅱ</span><div><strong>Evento pausado por administración.</strong><p>Puedes consultar las personas y sus movimientos, pero no añadir, editar ni cancelar asistentes mientras dure la pausa.</p></div></div>}
         {attendees.some(isNominativeLocked) && <div className="nominative-banner"><span>🔒</span><div><strong>Entradas nominativas</strong><p>Cuando una entrada figura como pagada y tiene número asignado, queda bloqueada para el responsable del grupo. Si detectas un error, solicita la corrección a la administración.</p></div></div>}
         <div className="section-heading attendee-heading"><div><h2>Personas de tu grupo</h2><p>Cada persona activa cuenta como una entrada. Añade también al responsable si va a asistir.</p></div>{selectedEvent.editable && <button className="button button-primary" onClick={startNew}>＋ Añadir asistente</button>}</div>
         {attendees.length === 0 ? <EmptyState title="Aún no has añadido asistentes" text="Añade a las personas que forman parte de tu grupo para este evento." /> : <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Nombre y apellidos</th><th>Documento</th><th>Precio</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
@@ -414,15 +429,17 @@ function PortalApp() {
             <td data-label="Documento"><span className="document-type">{person.document_type}</span> {person.document}</td>
             <td data-label="Precio">{formatEuro(person.price_paid)}</td>
             <td data-label="Pago">{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td>
-            <td data-label="Acciones" className="action-cell">
-              {isNominativeLocked(person) ? <span className="nominative-lock-badge">🔒 Nominativa</span> : selectedEvent.editable && <div className="row-actions"><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button>}</div>}
-            </td>
+            <td data-label="Acciones" className="action-cell"><div className="row-actions">
+              <button type="button" className="info-icon-button" onClick={() => void openAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>
+              {isNominativeLocked(person) ? <span className="nominative-lock-badge">🔒 Nominativa</span> : selectedEvent.editable && <><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button></>}
+            </div></td>
           </tr>)}
         </tbody></table></div><div className="table-foot">Los importes son los registrados por la organización de la lista. Las entradas nominativas quedan bloqueadas para el responsable del grupo cuando constan como pagadas y tienen número asignado.</div></div>}
       </>}
     </main>
     <footer className="footer"><span>TicketBaxe</span><span>© {new Date().getFullYear()}</span></footer>
 
+    {historyName && <AttendeeHistoryModal attendeeName={historyName} entries={historyEntries} loading={historyLoading} onClose={() => setHistoryName('')} />}
     {showForm && selectedEvent && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setShowForm(false); }}><form className="modal-card" onSubmit={saveAttendee}>
       <div className="modal-head"><div><span className="eyebrow">{form.id ? 'MODIFICAR REGISTRO' : 'NUEVA PERSONA'}</span><h2>{form.id ? 'Editar asistente' : 'Añadir asistente'}</h2></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}>×</button></div>
       <p className="modal-description">Una persona equivale a una entrada. Comprueba que el documento esté bien escrito.</p>
