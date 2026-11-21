@@ -112,7 +112,7 @@ Deno.serve(async (req: Request) => {
       }
       const { error: updateError } = await db.from('attendees').update({ status: 'cancelled', updated_by_type: 'group' }).eq('id', attendeeId);
       if (updateError) throw new HttpError('No se pudo cancelar el asistente.', 500);
-      await writeAudit(db, { actor_type: 'group', actor_id: group.id, group_id: group.id, event_id: eventId, action: 'attendee.cancelled', details: { attendee_id: attendeeId } });
+      await writeAudit(db, { actor_type: 'group', actor_id: group.id, group_id: group.id, event_id: eventId, action: 'attendee.cancelled', details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_status: attendee.status, status: 'cancelled' } });
       return json(req, { ok: true });
     }
 
