@@ -1,6 +1,6 @@
 import {
   adminDb, appSecret, corsHeaders, decryptAttendee, fail, getGroupSession, hmacHex, HttpError,
-  json, randomToken, storeAttendee, eventIsEditable, writeAudit,
+  json, randomToken, storeAttendee, eventIsEditable, writeAudit, getAttendeeHistory,
 } from '../_shared/common.ts';
 
 Deno.serve(async (req: Request) => {
@@ -23,7 +23,7 @@ Deno.serve(async (req: Request) => {
 
       const codeHash = await hmacHex(await appSecret('CODE_HASH_SECRET'), code);
       const { data: group, error } = await db.from('groups')
-        .select('id, label, responsible_name, rrpp_name, contact, active')
+        .select('id, label, responsible_name, rrpp_name, contact, active, is_paused')
         .eq('code_hash', codeHash).maybeSingle();
       if (error || !group || !group.active) {
         throw new HttpError('El identificador no es correcto o está desactivado.', 401, 'INVALID_CODE');
@@ -42,13 +42,18 @@ Deno.serve(async (req: Request) => {
 
     const { sessionId, group } = await getGroupSession(req, db);
 
+    if (action === 'attendee_history') {
+      const attendeeId = String(body.attendee_id ?? '');
+      return json(req, { ok: true, ...(await getAttendeeHistory(db, attendeeId, group.id)) });
+    }
+
     if (action === 'me') {
       const { data: assignments, error } = await db.from('event_groups').select('event_id').eq('group_id', group.id);
       if (error) throw new HttpError('No se han podido cargar tus eventos.', 500);
       const ids = (assignments ?? []).map((item: any) => item.event_id);
       let events: any[] = [];
       if (ids.length) {
-        const { data, error: eventsError } = await db.from('events').select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('is_published', true).in('id', ids).order('starts_at');
+        const { data, error: eventsError } = await db.from('events').select('id, name, description, starts_at, deadline_at, capacity, status, poster_url, is_paused').eq('is_published', true).in('id', ids).order('starts_at');
         if (eventsError) throw new HttpError('No se han podido cargar tus eventos.', 500);
         const { data: metrics, error: metricsError } = await db.rpc('get_group_event_metrics', {
           p_group_id: group.id,
@@ -62,7 +67,7 @@ Deno.serve(async (req: Request) => {
             ...event,
             group_attendee_count: Number(item.group_attendee_count ?? 0),
             total_attendee_count: Number(item.total_attendee_count ?? 0),
-            editable: event.status === 'open' && new Date(event.deadline_at).getTime() > Date.now(),
+            editable: event.status === 'open' && !event.is_paused && !group.is_paused && new Date(event.deadline_at).getTime() > Date.now(),
           };
         });
       }
@@ -74,7 +79,7 @@ Deno.serve(async (req: Request) => {
       const { data: assignment } = await db.from('event_groups').select('event_id').eq('event_id', eventId).eq('group_id', group.id).maybeSingle();
       if (!assignment) throw new HttpError('Este evento no está asignado a tu grupo.', 403);
       const { data: event, error: eventError } = await db.from('events')
-        .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url').eq('id', eventId).eq('is_published', true).maybeSingle();
+        .select('id, name, description, starts_at, deadline_at, capacity, status, poster_url, is_paused').eq('id', eventId).eq('is_published', true).maybeSingle();
       if (eventError || !event) throw new HttpError('No se ha encontrado el evento.', 404);
       const { data: rows, error: rowsError } = await db.from('attendees')
         .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, price_frozen_at, created_at, updated_at')
@@ -82,7 +87,7 @@ Deno.serve(async (req: Request) => {
       if (rowsError) throw new HttpError('No se han podido cargar los asistentes.', 500);
       const attendees = [];
       for (const row of rows ?? []) attendees.push({ ...(await decryptAttendee(row)), paid: row.paid === true });
-      event.editable = event.status === 'open' && new Date(event.deadline_at).getTime() > Date.now();
+      event.editable = event.status === 'open' && !event.is_paused && !group.is_paused && new Date(event.deadline_at).getTime() > Date.now();
       return json(req, { ok: true, event, attendees });
     }
 
@@ -90,7 +95,7 @@ Deno.serve(async (req: Request) => {
       const eventId = String(body.event_id ?? '');
       const { data: assignment } = await db.from('event_groups').select('event_id').eq('event_id', eventId).eq('group_id', group.id).maybeSingle();
       if (!assignment) throw new HttpError('Este evento no está asignado a tu grupo.', 403);
-      await eventIsEditable(db, eventId);
+      await eventIsEditable(db, eventId, group.id);
       const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, group.id, 'group');
       return json(req, { ok: true, attendee });
     }
@@ -98,7 +103,7 @@ Deno.serve(async (req: Request) => {
     if (action === 'cancel_attendee') {
       const eventId = String(body.event_id ?? '');
       const attendeeId = String(body.attendee_id ?? '');
-      await eventIsEditable(db, eventId);
+      await eventIsEditable(db, eventId, group.id);
       const { data: attendee, error } = await db.from('attendees').select('id, group_id, event_id, full_name, status, paid, entry_number, price_frozen_at')
         .eq('id', attendeeId).eq('event_id', eventId).maybeSingle();
       if (error || !attendee || attendee.group_id !== group.id) throw new HttpError('No puedes modificar este asistente.', 404);
