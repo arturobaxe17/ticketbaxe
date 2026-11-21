@@ -2737,3 +2737,4 @@ body, html { background: var(--paper); color: var(--ink); }
   .group-row{flex-wrap:wrap}
   .group-row .row-actions{width:100%;margin-left:43px;justify-content:flex-start}
 }
+.history-exception{display:inline-block;margin-top:7px;padding:4px 7px;color:#795b2d;background:#f6f0e5;border:1px solid #e5d6b8;font:600 8px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
