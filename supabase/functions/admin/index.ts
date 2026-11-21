@@ -271,6 +271,15 @@ Deno.serve(async (req: Request) => {
       const { data: metrics, error: metricsError } = await db.rpc('get_admin_event_metrics');
       if (metricsError) throw new HttpError('No se pudieron calcular los contadores de los eventos.', 500);
       const metricsByEvent = new Map((metrics ?? []).map((item: any) => [item.event_id, item]));
+      const { data: settlementRows, error: settlementError } = await db.from('attendees')
+        .select('event_id, paid, status, price_paid')
+        .eq('paid', true).neq('status', 'cancelled');
+      if (settlementError) throw new HttpError('No se pudieron calcular los importes a liquidar.', 500);
+      const settlementByEvent = new Map<string, number>();
+      for (const attendee of settlementRows ?? []) {
+        const value = Number(attendee.price_paid ?? 0);
+        settlementByEvent.set(attendee.event_id, (settlementByEvent.get(attendee.event_id) ?? 0) + value);
+      }
       const summary = (events ?? []).map((event: any) => {
         const item: any = metricsByEvent.get(event.id) ?? {};
         return {
@@ -279,6 +288,7 @@ Deno.serve(async (req: Request) => {
           confirmed_count: Number(item.confirmed_count ?? 0),
           pending_count: Number(item.pending_count ?? 0),
           group_count: Number(item.group_count ?? 0),
+          settlement_total: Math.round((settlementByEvent.get(event.id) ?? 0) * 100) / 100,
         };
       });
       const { count: activeGroups } = await db.from('groups').select('id', { count: 'exact', head: true }).eq('active', true).eq('is_internal', false);
@@ -503,7 +513,7 @@ Deno.serve(async (req: Request) => {
       if (paid && attendee.price_paid === null) {
         throw new HttpError('Antes de marcarla como pagada, registra el importe cobrado.');
       }
-      const { error } = await db.from('attendees').update({ paid, updated_by_type: 'admin' }).eq('id', attendeeId);
+      const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, price_paid: attendee.price_paid } });
       return json(req, { ok: true, paid });
@@ -528,14 +538,24 @@ Deno.serve(async (req: Request) => {
         .eq('id', attendeeId).maybeSingle();
       if (attendeeError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
       const locked = attendee.price_frozen_at !== null;
+      const exceptionalChange = locked && pricePaid !== Number(attendee.price_paid);
       if (attendee.paid === true && pricePaid === null) {
         throw new HttpError('No puedes quitar el importe mientras el pago siga marcado como pagado.');
       }
-      if (locked && pricePaid !== Number(attendee.price_paid)) {
-        throw new HttpError('El precio queda fijado cuando el pago está confirmado y se asigna el número de entrada.', 409, 'ATTENDEE_PRICE_LOCKED');
+      if (exceptionalChange && body.admin_override !== true) {
+        throw new HttpError('Esta entrada ya está fijada. Para cambiar el importe, confirma la modificación excepcional desde administración.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
-      const { error: updateError } = await db.from('attendees')
-        .update({ price_paid: pricePaid, updated_by_type: 'admin' }).eq('id', attendeeId);
+      let updateError: any = null;
+      if (exceptionalChange) {
+        const result = await db.rpc('admin_override_attendee_price', {
+          p_attendee_id: attendeeId,
+          p_price_paid: pricePaid,
+        });
+        updateError = result.error;
+      } else if (!locked) {
+        const result = await db.from('attendees').update({ price_paid: pricePaid }).eq('id', attendeeId);
+        updateError = result.error;
+      }
       if (updateError?.message?.includes('ATTENDEE_PRICE_LOCKED')) {
         throw new HttpError('El precio de esta entrada ya está fijado y no se puede modificar.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
@@ -543,7 +563,7 @@ Deno.serve(async (req: Request) => {
       await writeAudit(db, {
         actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
         action: 'attendee.price_updated',
-        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_price: attendee.price_paid, price_paid: pricePaid },
+        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_price: attendee.price_paid, price_paid: pricePaid, admin_override: exceptionalChange },
       });
       return json(req, { ok: true, price_paid: pricePaid });
     }
@@ -571,7 +591,7 @@ Deno.serve(async (req: Request) => {
         throw new HttpError('Para retirar el número, marca primero el pago como pendiente.');
       }
       const { error: updateError } = await db.from('attendees')
-        .update({ entry_number: entryNumber, updated_by_type: 'admin' }).eq('id', attendeeId);
+        .update({ entry_number: entryNumber }).eq('id', attendeeId);
       if (updateError?.code === '23505') {
         throw new HttpError('Ese número ya está asignado a otra persona de este evento.', 409, 'ENTRY_NUMBER_IN_USE');
       }
