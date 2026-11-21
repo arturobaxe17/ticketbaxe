@@ -280,6 +280,10 @@ Deno.serve(async (req: Request) => {
         const value = Number(attendee.price_paid ?? 0);
         settlementByEvent.set(attendee.event_id, (settlementByEvent.get(attendee.event_id) ?? 0) + value);
       }
+      const { data: snapshotEvents, error: snapshotEventsError } = await db.from('official_snapshots')
+        .select('event_id');
+      if (snapshotEventsError) throw new HttpError('No se pudo comprobar qué eventos ya se han cerrado.', 500);
+      const hasOfficialSnapshot = new Set((snapshotEvents ?? []).map((row: any) => row.event_id));
       const summary = (events ?? []).map((event: any) => {
         const item: any = metricsByEvent.get(event.id) ?? {};
         return {
@@ -288,6 +292,7 @@ Deno.serve(async (req: Request) => {
           confirmed_count: Number(item.confirmed_count ?? 0),
           pending_count: Number(item.pending_count ?? 0),
           group_count: Number(item.group_count ?? 0),
+          has_official_snapshot: hasOfficialSnapshot.has(event.id),
           settlement_total: Math.round((settlementByEvent.get(event.id) ?? 0) * 100) / 100,
         };
       });
