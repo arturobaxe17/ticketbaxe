@@ -2678,3 +2678,62 @@ body, html { background: var(--paper); color: var(--ink); }
   .nominative-banner { padding: 10px 11px; gap: 8px; }
   .nominative-banner p { font-size: 9px; }
 }
+
+
+/* Historial individual, pausas temporales y liquidación */
+.info-icon-button{
+  display:inline-grid;place-items:center;width:25px;height:25px;flex:0 0 25px;
+  color:var(--accent-dark);background:transparent;border:1px solid var(--line-dark);
+  border-radius:50%;font:600 14px Georgia,serif;line-height:1;cursor:pointer;
+}
+.info-icon-button:hover{color:var(--paper-light);background:var(--accent-dark);border-color:var(--accent-dark)}
+.history-modal{width:min(100%,650px)}
+.history-modal .modal-head h2{font-size:26px}
+.history-list{display:flex;flex-direction:column;gap:0;max-height:min(58vh,560px);overflow-y:auto;margin-top:16px;border-top:1px solid var(--line-dark)}
+.history-item{padding:15px 2px;border-bottom:1px solid var(--line)}
+.history-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.history-item-head strong{color:var(--ink);font-size:12px}
+.history-item-head time{flex:0 0 auto;color:var(--muted);font:400 9px 'DM Mono',monospace}
+.history-actor{display:inline-block;margin-top:5px;color:var(--accent-dark);font:500 9px 'DM Mono',monospace}
+.history-item ul{display:flex;flex-direction:column;gap:4px;margin:9px 0 0;padding-left:17px;color:var(--muted);font-size:11px}
+.history-item li{padding-left:2px}
+.pause-banner{display:flex;align-items:flex-start;gap:12px;margin:0 0 22px;padding:14px 15px;color:var(--amber);background:#f6f0e5;border:1px solid #e5d6b8;border-radius:0}
+.pause-banner>span{font-size:18px;line-height:1}
+.pause-banner strong{font-size:12px;color:#795b2d}
+.pause-banner p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+.admin-pause-banner{margin-top:0}
+.pause-chip{display:inline-flex;align-items:center;padding:4px 7px;color:#795b2d;background:#f6f0e5;border:1px solid #e5d6b8;font:600 8px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
+.settlement-panel{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(280px,1.5fr);gap:24px;margin:0 0 28px;padding:18px 0;border-top:1px solid var(--line-dark);border-bottom:1px solid var(--line)}
+.settlement-total{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;padding-right:18px;border-right:1px solid var(--line)}
+.settlement-total>span{color:var(--muted);font:500 9px 'DM Mono',monospace;letter-spacing:.08em}
+.settlement-total>strong{color:var(--ink);font:600 34px 'Newsreader',Georgia,serif}
+.settlement-total>small{color:var(--faint);font:400 9px 'DM Mono',monospace}
+.settlement-groups{display:flex;flex-direction:column;gap:0}
+.settlement-groups>strong{margin-bottom:6px;color:var(--ink);font-size:11px}
+.settlement-group-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 0;border-top:1px solid var(--line)}
+.settlement-group-row>span{color:var(--ink);font-size:10px}
+.settlement-group-row small{display:block;margin-top:2px;color:var(--faint);font:400 8px 'DM Mono',monospace}
+.settlement-group-row>strong{color:var(--ink);font:600 12px 'DM Mono',monospace;white-space:nowrap}
+.price-fixed .price-exception-link{margin-top:3px;padding:0;font-size:9px}
+.price-fixed .price-exception-link:hover{text-decoration:underline}
+.price-editor .price-save{white-space:nowrap}
+.overview-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:900px){
+  .overview-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .overview-card:nth-child(2){border-right:0}
+  .overview-card:nth-child(3){padding-left:0}
+  .settlement-panel{grid-template-columns:1fr 1.5fr}
+}
+@media(max-width:620px){
+  .history-modal{padding:20px}
+  .history-item-head{flex-direction:column;gap:4px}
+  .settlement-panel{grid-template-columns:1fr;gap:14px}
+  .settlement-total{padding:0 0 12px;border-right:0;border-bottom:1px solid var(--line)}
+  .overview-cards{grid-template-columns:1fr 1fr}
+  .overview-card{padding:13px 10px 14px 0}
+  .overview-card+.overview-card{padding-left:10px}
+  .overview-card:nth-child(odd){padding-left:0;border-right:1px solid var(--line)}
+  .overview-card:nth-child(even){border-right:0}
+  .group-row{flex-wrap:wrap}
+  .group-row .row-actions{width:100%;margin-left:43px;justify-content:flex-start}
+}
