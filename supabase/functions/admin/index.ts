@@ -276,8 +276,13 @@ Deno.serve(async (req: Request) => {
         .eq('paid', true).neq('status', 'cancelled');
       if (settlementError) throw new HttpError('No se pudieron calcular los importes a liquidar.', 500);
       const settlementByEvent = new Map<string, number>();
+      const settlementMissingPriceByEvent = new Map<string, number>();
       for (const attendee of settlementRows ?? []) {
-        const value = Number(attendee.price_paid ?? 0);
+        if (attendee.price_paid === null || attendee.price_paid === undefined) {
+          settlementMissingPriceByEvent.set(attendee.event_id, (settlementMissingPriceByEvent.get(attendee.event_id) ?? 0) + 1);
+          continue;
+        }
+        const value = Number(attendee.price_paid);
         settlementByEvent.set(attendee.event_id, (settlementByEvent.get(attendee.event_id) ?? 0) + value);
       }
       const { data: snapshotEvents, error: snapshotEventsError } = await db.from('official_snapshots')
@@ -294,6 +299,7 @@ Deno.serve(async (req: Request) => {
           group_count: Number(item.group_count ?? 0),
           has_official_snapshot: hasOfficialSnapshot.has(event.id),
           settlement_total: Math.round((settlementByEvent.get(event.id) ?? 0) * 100) / 100,
+          settlement_missing_price_count: settlementMissingPriceByEvent.get(event.id) ?? 0,
         };
       });
       const { count: activeGroups } = await db.from('groups').select('id', { count: 'exact', head: true }).eq('active', true).eq('is_internal', false);
