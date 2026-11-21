@@ -1,6 +1,6 @@
 import {
   adminDb, appSecret, assertString, authDb, closeDueEvents, createOfficialSnapshot, corsHeaders, decryptAttendee, decryptText,
-  env, eventIsEditable, fail, getBearer, hmacHex, HttpError, json, jwtPayload, randomToken, requireAdmin, storeAttendee, writeAudit,
+  env, eventIsEditable, fail, getBearer, hmacHex, HttpError, json, jwtPayload, randomToken, requireAdmin, storeAttendee, writeAudit, getAttendeeHistory,
 } from '../_shared/common.ts';
 
 function makeCode(): string {
@@ -59,7 +59,7 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
   const groupIds = (assignments ?? []).map((x: any) => x.group_id);
   let groups: any[] = [];
   if (groupIds.length) {
-    const { data } = await db.from('groups').select('id, label, responsible_name, contact, active, code_last4').in('id', groupIds).eq('is_internal', false).order('label');
+    const { data } = await db.from('groups').select('id, label, responsible_name, contact, active, is_paused, code_last4').in('id', groupIds).eq('is_internal', false).order('label');
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
@@ -236,6 +236,10 @@ Deno.serve(async (req: Request) => {
     }
     const admin = await requireAdmin(req);
     if (action === 'verify_email_session') return json(req, { ok: true, email: admin.email });
+    if (action === 'attendee_history') {
+      const attendeeId = String(body.attendee_id ?? '');
+      return json(req, { ok: true, ...(await getAttendeeHistory(db, attendeeId)) });
+    }
     if (action === 'logout_admin_session') {
       const sessionToken = req.headers.get('x-admin-email-session') ?? '';
       const tokenHash = await hmacHex(await appSecret('SESSION_HASH_SECRET'), `admin-email-session:${sessionToken}`);
@@ -366,7 +370,7 @@ Deno.serve(async (req: Request) => {
         rrpp_name: typeof body.rrpp_name === 'string' ? body.rrpp_name.trim().slice(0, 120) || null : null,
         contact: typeof body.contact === 'string' ? body.contact.slice(0, 160) : '',
         code_hash: codeHash, code_last4: code.slice(-4), created_by: admin.id,
-      }).select('id, label, responsible_name, rrpp_name, contact, active, code_last4, created_at').single();
+      }).select('id, label, responsible_name, rrpp_name, contact, active, is_paused, code_last4, created_at').single();
       if (error) throw new HttpError('No se pudo crear el grupo.', 500);
       const assignments = eventIds.map(event_id => ({ event_id, group_id: group.id }));
       const { error: assignmentError } = await db.from('event_groups').insert(assignments);
@@ -381,7 +385,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'list_groups') {
       const { data: groups, error } = await db.from('groups')
-        .select('id, label, responsible_name, rrpp_name, contact, active, code_last4, created_at').eq('is_internal', false).order('created_at', { ascending: false });
+        .select('id, label, responsible_name, rrpp_name, contact, active, is_paused, code_last4, created_at').eq('is_internal', false).order('created_at', { ascending: false });
       if (error) throw new HttpError('No se pudieron cargar los grupos.', 500);
       const result = [];
       for (const group of groups ?? []) {
@@ -432,6 +436,20 @@ Deno.serve(async (req: Request) => {
       return json(req, { ok: true, code });
     }
 
+    if (action === 'set_group_paused') {
+      const groupId = String(body.group_id ?? '');
+      const paused = body.paused === true;
+      const { data: targetGroup } = await db.from('groups').select('id, is_internal, is_paused').eq('id', groupId).maybeSingle();
+      if (!targetGroup || targetGroup.is_internal) throw new HttpError('No puedes pausar este grupo.', 404);
+      const { error } = await db.from('groups').update({ is_paused: paused }).eq('id', groupId);
+      if (error) throw new HttpError('No se pudo cambiar la pausa del grupo.', 500);
+      if (targetGroup.is_paused !== paused) {
+        await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: groupId,
+          action: paused ? 'group.paused' : 'group.unpaused', details: {} });
+      }
+      return json(req, { ok: true, is_paused: paused });
+    }
+
     if (action === 'set_group_active') {
       const groupId = String(body.group_id ?? '');
       const active = body.active === true;
@@ -444,6 +462,22 @@ Deno.serve(async (req: Request) => {
       return json(req, { ok: true });
     }
 
+    if (action === 'set_event_paused') {
+      const eventId = String(body.event_id ?? '');
+      const paused = body.paused === true;
+      const { data: current, error: currentError } = await db.from('events')
+        .select('id, status, is_paused').eq('id', eventId).maybeSingle();
+      if (currentError || !current) throw new HttpError('No se ha encontrado el evento.', 404);
+      if (paused && current.status !== 'open') throw new HttpError('Solo se pueden pausar eventos que estén abiertos.', 409);
+      const { error } = await db.from('events').update({ is_paused: paused }).eq('id', eventId);
+      if (error) throw new HttpError('No se pudo cambiar la pausa del evento.', 500);
+      if (current.is_paused !== paused) {
+        await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, event_id: eventId,
+          action: paused ? 'event.paused' : 'event.unpaused', details: {} });
+      }
+      return json(req, { ok: true, is_paused: paused });
+    }
+
     if (action === 'event_detail') {
       return json(req, { ok: true, ...(await getEventDetail(db, String(body.event_id ?? ''))) });
     }
@@ -454,7 +488,7 @@ Deno.serve(async (req: Request) => {
       const { data: assignment } = await db.from('event_groups').select('group_id').eq('event_id', eventId).eq('group_id', groupId).maybeSingle();
       if (!assignment) throw new HttpError('Este grupo no está asignado al evento.');
       await eventIsEditable(db, eventId);
-      const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, groupId, 'admin');
+      const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, groupId, 'admin', admin.id);
       return json(req, { ok: true, attendee });
     }
 
@@ -469,7 +503,7 @@ Deno.serve(async (req: Request) => {
       if (paid && attendee.price_paid === null) {
         throw new HttpError('Antes de marcarla como pagada, registra el importe cobrado.');
       }
-      const { error } = await db.from('attendees').update({ paid }).eq('id', attendeeId);
+      const { error } = await db.from('attendees').update({ paid, updated_by_type: 'admin' }).eq('id', attendeeId);
       if (error) throw new HttpError('No se pudo actualizar el pago.', 500);
       await writeAudit(db, { actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id, action: paid ? 'attendee.marked_paid' : 'attendee.marked_unpaid', details: { attendee_id: attendeeId, full_name: attendee.full_name, price_paid: attendee.price_paid } });
       return json(req, { ok: true, paid });
@@ -501,7 +535,7 @@ Deno.serve(async (req: Request) => {
         throw new HttpError('El precio queda fijado cuando el pago está confirmado y se asigna el número de entrada.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
       const { error: updateError } = await db.from('attendees')
-        .update({ price_paid: pricePaid }).eq('id', attendeeId);
+        .update({ price_paid: pricePaid, updated_by_type: 'admin' }).eq('id', attendeeId);
       if (updateError?.message?.includes('ATTENDEE_PRICE_LOCKED')) {
         throw new HttpError('El precio de esta entrada ya está fijado y no se puede modificar.', 409, 'ATTENDEE_PRICE_LOCKED');
       }
@@ -537,7 +571,7 @@ Deno.serve(async (req: Request) => {
         throw new HttpError('Para retirar el número, marca primero el pago como pendiente.');
       }
       const { error: updateError } = await db.from('attendees')
-        .update({ entry_number: entryNumber }).eq('id', attendeeId);
+        .update({ entry_number: entryNumber, updated_by_type: 'admin' }).eq('id', attendeeId);
       if (updateError?.code === '23505') {
         throw new HttpError('Ese número ya está asignado a otra persona de este evento.', 409, 'ENTRY_NUMBER_IN_USE');
       }
