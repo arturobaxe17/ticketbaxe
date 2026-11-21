@@ -436,7 +436,7 @@ function PortalApp() {
             <td data-label="Pago">{person.status !== 'cancelled' ? (person.paid ? <span className="paid-label">✓ Pagado</span> : <span className="unpaid-label">Pendiente</span>) : '—'}</td>
             <td data-label="Acciones" className="action-cell"><div className="row-actions">
               <button type="button" className="info-icon-button" onClick={() => void openAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>
-              {isNominativeLocked(person) ? <span className="nominative-lock-badge">🔒 Nominativa</span> : selectedEvent.editable && <><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button></>}
+              {isNominativeLocked(person) ? <span className="nominative-lock-badge">🔒 Nominativa</span> : selectedEvent.editable && <><button className="text-button" onClick={() => startEdit(person)}>{person.status === 'cancelled' ? 'Reactivar / editar' : 'Editar'}</button>{person.status !== 'cancelled' && <button className="text-button text-danger" onClick={() => void cancelAttendee(person)}>Cancelar</button></>}</>}
             </div></td>
           </tr>)}
         </tbody></table></div><div className="table-foot">Los importes son los registrados por la organización de la lista. Las entradas nominativas quedan bloqueadas para el responsable del grupo cuando constan como pagadas y tienen número asignado.</div></div>}
