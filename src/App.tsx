@@ -6,7 +6,7 @@ import { dateTime, downloadCsv, maskDocument, toIso, toLocalInput } from './lib/
 type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
-  capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean;
+  capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean; is_paused?: boolean;
   attendee_count?: number; group_count?: number;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
@@ -17,7 +17,7 @@ type Attendee = {
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
-  code_last4: string; rrpp_name?: string | null; event_ids: string[]; created_at: string;
+  code_last4: string; rrpp_name?: string | null; is_paused?: boolean; event_ids: string[]; created_at: string;
 };
 
 const PORTAL_SESSION_KEY = 'ticketbaxe_portal_session';
@@ -75,11 +75,97 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
   </div>;
 }
 
-function StatusPill({ status, editable }: { status: string; editable?: boolean }) {
+function StatusPill({ status, editable, paused }: { status: string; editable?: boolean; paused?: boolean }) {
   if (status === 'cancelled') return <span className="pill pill-red">Cancelado</span>;
-  if (status === 'closed' || editable === false) return <span className="pill pill-muted">Cerrado</span>;
-  if (status === 'pending') return <span className="pill pill-amber">Pendiente</span>;
-  return <span className="pill pill-green">{status === 'open' ? 'Abierto' : 'Confirmado'}</span>;
+  if (status === 'closed') return <span className="pill pill-muted">Cerrado</span>;
+  if (paused) return <span className="pill pill-amber">Pausado</span>;
+  if (editable === false) return <span className="pill pill-muted">Cerrado</span>;
+  return <span className="pill pill-green">Abierto</span>;
+}
+
+type HistoryEntry = {
+  id: string | number;
+  actor_label: string;
+  action: string;
+  details?: Record<string, any>;
+  created_at: string;
+};
+
+function historyActionTitle(action: string): string {
+  const labels: Record<string, string> = {
+    'attendee.created': 'Entrada creada',
+    'attendee.updated': 'Datos modificados',
+    'attendee.marked_paid': 'Pago marcado como pagado',
+    'attendee.marked_unpaid': 'Pago marcado como pendiente',
+    'attendee.price_updated': 'Precio actualizado',
+    'attendee.entry_number_assigned': 'Número de entrada asignado',
+    'attendee.entry_number_removed': 'Número de entrada retirado',
+    'attendee.cancelled': 'Entrada cancelada por el responsable',
+    'attendee.cancelled_by_admin': 'Entrada cancelada por administración',
+  };
+  return labels[action] ?? 'Actividad registrada';
+}
+
+function historyChangeLines(details: Record<string, any> | undefined): string[] {
+  if (!details) return ['Actividad registrada.'];
+  const changes = details.changes && typeof details.changes === 'object' ? details.changes : {};
+  const labels: Record<string, string> = {
+    full_name: 'Nombre',
+    document_type: 'Tipo de documento',
+    status: 'Estado',
+    paid: 'Pago',
+    entry_number: 'Número de entrada',
+    price_paid: 'Precio',
+  };
+  const lines = Object.entries(changes).map(([key, raw]: [string, any]) => {
+    if (key === 'document') return 'Documento modificado (el número no se muestra).';
+    const label = labels[key] ?? key;
+    if (raw && typeof raw === 'object' && ('before' in raw || 'after' in raw)) {
+      const before = key === 'price_paid' ? formatEuro(raw.before) : String(raw.before ?? '—');
+      const after = key === 'price_paid' ? formatEuro(raw.after) : String(raw.after ?? '—');
+      return label + ': ' + before + ' → ' + after;
+    }
+    return label + ' actualizado.';
+  });
+  if (lines.length) return lines;
+  if (details.full_name) return ['Nombre registrado: ' + details.full_name];
+  if (details.previous_price !== undefined || details.price_paid !== undefined) {
+    return ['Precio: ' + formatEuro(details.previous_price) + ' → ' + formatEuro(details.price_paid)];
+  }
+  if (details.previous_entry_number !== undefined || details.entry_number !== undefined) {
+    return ['Número de entrada: ' + String(details.previous_entry_number ?? '—') + ' → ' + String(details.entry_number ?? '—')];
+  }
+  if (details.previous_paid !== undefined || details.paid !== undefined) {
+    return ['Pago: ' + (details.previous_paid ? 'Pagado' : 'Pendiente') + ' → ' + (details.paid ? 'Pagado' : 'Pendiente')];
+  }
+  if (details.identity_changed) return ['Se modificaron datos de identificación. El detalle de campos no estaba disponible para este cambio antiguo.'];
+  return ['Actividad registrada.'];
+}
+
+function AttendeeHistoryModal({
+  attendeeName, entries, loading, onClose,
+}: {
+  attendeeName: string;
+  entries: HistoryEntry[];
+  loading: boolean;
+  onClose: () => void;
+}) {
+  return <div className="modal-backdrop history-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="modal-card history-modal" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+      <div className="modal-head">
+        <div><span className="eyebrow">TRAZABILIDAD</span><h2 id="history-modal-title">Historial de la entrada</h2><p className="modal-description">{attendeeName}</p></div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Cerrar historial">×</button>
+      </div>
+      {loading ? <div className="loading-panel"><div className="spinner" />Cargando historial…</div>
+        : entries.length === 0 ? <div className="empty-inline">Todavía no hay movimientos registrados para esta entrada.</div>
+        : <div className="history-list">{entries.map(entry => <article className="history-item" key={entry.id}>
+          <div className="history-item-head"><strong>{historyActionTitle(entry.action)}</strong><time>{dateTime(entry.created_at)}</time></div>
+          <span className="history-actor">{entry.actor_label}</span>
+          <ul>{historyChangeLines(entry.details).map((line, index) => <li key={index}>{line}</li>)}</ul>
+        </article>)}</div>}
+      <div className="modal-actions"><button type="button" className="button button-light" onClick={onClose}>Cerrar</button></div>
+    </section>
+  </div>;
 }
 
 function NoticeBar({ notice, clear }: { notice: Notice; clear: () => void }) {
