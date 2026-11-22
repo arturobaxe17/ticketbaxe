@@ -7,13 +7,13 @@ type Notice = { kind: 'success' | 'error' | 'info'; text: string } | null;
 type EventRecord = {
   id: string; name: string; description: string; starts_at: string; deadline_at: string;
   capacity: number | null; status: 'open' | 'closed' | 'cancelled'; poster_url?: string | null; is_published?: boolean; is_paused?: boolean;
-  attendee_count?: number; group_count?: number; settlement_total?: number; settlement_missing_price_count?: number; has_official_snapshot?: boolean;
+  attendee_count?: number; group_count?: number; settlement_total?: number; settlement_paid_total?: number; settlement_credit_total?: number; settlement_missing_price_count?: number; has_official_snapshot?: boolean;
   group_attendee_count?: number; total_attendee_count?: number; editable?: boolean;
 };
 type AttendeeForm = { id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT'; document: string };
 type Attendee = {
   id: string; event_id: string; group_id: string; full_name: string; document_type: 'DNI' | 'NIE' | 'PASSPORT';
-  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; price_frozen_at?: string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
+  document: string; status: 'pending' | 'confirmed' | 'cancelled'; paid?: boolean; entry_number?: number | null; price_paid?: number | string | null; price_frozen_at?: string | null; establishment_paid_at?: string | null; establishment_paid_amount?: number | string | null; establishment_paid_by?: string | null; is_loose?: boolean; name_duplicate?: boolean; created_at?: string; updated_at?: string;
 };
 type GroupRecord = {
   id: string; label: string; responsible_name: string; contact: string; active: boolean;
@@ -97,6 +97,8 @@ function historyActionTitle(action: string): string {
     'attendee.updated': 'Datos modificados',
     'attendee.marked_paid': 'Pago marcado como pagado',
     'attendee.marked_unpaid': 'Pago marcado como pendiente',
+    'attendee.marked_paid_to_establishment': 'Pago al establecimiento registrado',
+    'attendee.unmarked_paid_to_establishment': 'Marca de pago al establecimiento deshecha',
     'attendee.price_updated': 'Precio actualizado',
     'attendee.entry_number_assigned': 'Número de entrada asignado',
     'attendee.entry_number_removed': 'Número de entrada retirado',
@@ -137,6 +139,8 @@ function historyChangeLines(details: Record<string, any> | undefined): string[] 
   if (details.previous_paid !== undefined || details.paid !== undefined) {
     return ['Pago: ' + (details.previous_paid ? 'Pagado' : 'Pendiente') + ' → ' + (details.paid ? 'Pagado' : 'Pendiente')];
   }
+  if (details.amount !== undefined) return ['Importe entregado al establecimiento: ' + formatEuro(details.amount)];
+  if (details.previous_amount !== undefined) return ['Se retiró la marca de pago al establecimiento (' + formatEuro(details.previous_amount) + ').'];
   if (details.previous_status !== undefined || details.status !== undefined) {
     return ['Estado: ' + String(details.previous_status ?? '—') + ' → ' + String(details.status ?? '—')];
   }
@@ -871,22 +875,33 @@ function AdminApp() {
   }
 
   const settlementRows = selectedEvent ? (() => {
-    const totals = new Map<string, { label: string; count: number; total: number; missing: number }>();
+    const totals = new Map<string, { label: string; count: number; total: number; paid: number; missing: number }>();
     for (const person of selectedEvent.attendees as Attendee[]) {
-      if (person.status === 'cancelled' || person.paid !== true) continue;
       const key = person.is_loose ? 'loose' : person.group_id;
       const label = person.is_loose ? 'Entradas sueltas' : selectedEvent.groups.find((g: GroupRecord) => g.id === person.group_id)?.label ?? 'Grupo';
-      const current = totals.get(key) ?? { label, count: 0, total: 0, missing: 0 };
-      if (person.price_paid == null) current.missing += 1;
-      else {
-        current.count += 1;
-        current.total += Number(person.price_paid);
+      const current = totals.get(key) ?? { label, count: 0, total: 0, paid: 0, missing: 0 };
+      if (person.establishment_paid_at && person.establishment_paid_amount != null) {
+        current.paid += Number(person.establishment_paid_amount);
       }
-      totals.set(key, current);
+      if (person.status !== 'cancelled' && person.paid === true) {
+        if (person.price_paid == null) current.missing += 1;
+        else {
+          current.count += 1;
+          current.total += Number(person.price_paid);
+        }
+      }
+      if (person.paid === true || person.establishment_paid_at) totals.set(key, current);
     }
-    return [...totals.entries()].map(([id, value]) => ({ id, ...value }));
+    return [...totals.entries()].map(([id, value]) => ({
+      id, ...value,
+      due: Math.max(0, value.total - value.paid),
+      credit: Math.max(0, value.paid - value.total),
+    }));
   })() : [];
-  const settlementTotal = settlementRows.reduce((sum, item) => sum + item.total, 0);
+  const settlementGrossTotal = settlementRows.reduce((sum, item) => sum + item.total, 0);
+  const settlementPaidTotal = settlementRows.reduce((sum, item) => sum + item.paid, 0);
+  const settlementTotal = Math.max(0, settlementGrossTotal - settlementPaidTotal);
+  const settlementCreditTotal = Math.max(0, settlementPaidTotal - settlementGrossTotal);
   const missingSettlementPriceCount = selectedEvent ? selectedEvent.attendees.filter((person: Attendee) => person.status !== 'cancelled' && person.paid === true && person.price_paid == null).length : 0;
 
   async function logoutAdmin() {
@@ -930,7 +945,23 @@ function AdminApp() {
         <button className="back-link" onClick={() => { setSelectedEvent(null); void loadDashboard(); }}>← Volver al panel</button>
         <section className="event-detail-header admin-detail-header"><div><span className="eyebrow">DETALLE DEL EVENTO</span><h1>{selectedEvent.event.name}</h1><p>{dateTime(selectedEvent.event.starts_at)} <span className="dot-separator">·</span> Cierre: {dateTime(selectedEvent.event.deadline_at)}</p></div><StatusPill status={selectedEvent.event.status} editable={selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now()} paused={selectedEvent.event.is_paused} /></section>
         <div className="detail-stats"><div><span>Asistentes activos</span><strong>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled').length}</strong></div><div><span>Grupos asignados</span><strong>{selectedEvent.groups.length}</strong></div><div><span>Aforo</span><strong className="stat-date">{selectedEvent.event.capacity ?? 'Sin límite'}</strong></div></div>
-        <section className="settlement-panel"><div className="settlement-total"><span>{(selectedEvent.event.status === 'closed' || selectedEvent.snapshots?.length > 0) ? 'TOTAL A LIQUIDAR' : 'TOTAL PROVISIONAL'}</span><strong>{formatEuro(settlementTotal)}</strong><small>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled' && p.paid === true && p.price_paid != null).length} entradas pagadas incluidas</small>{missingSettlementPriceCount > 0 && <span className="settlement-warning">⚠ {missingSettlementPriceCount} entradas pagadas sin precio; no incluidas en el total.</span>}</div><div className="settlement-groups"><strong>Desglose por grupo</strong>{settlementRows.length ? settlementRows.map(item => <div className="settlement-group-row" key={item.id}><span>{item.label} <small>{item.count} incluidas{item.missing > 0 ? ` · ${item.missing} pagadas sin precio` : ''}</small></span><strong>{formatEuro(item.total)}</strong></div>) : <span className="empty-inline">Todavía no hay entradas pagadas con importe registrado.</span>}</div></section>
+        <section className="settlement-panel">
+          <div className="settlement-total">
+            <span>{(selectedEvent.event.status === 'closed' || selectedEvent.snapshots?.length > 0) ? 'PENDIENTE DE LIQUIDAR' : 'PENDIENTE PROVISIONAL'}</span>
+            <strong>{formatEuro(settlementTotal)}</strong>
+            <small>{selectedEvent.attendees.filter((p: Attendee) => p.status !== 'cancelled' && p.paid === true && p.price_paid != null).length} entradas pagadas por clientes</small>
+            <div className="settlement-already-paid"><span>YA PAGADO AL ESTABLECIMIENTO</span><strong>{formatEuro(settlementPaidTotal)}</strong></div>
+            {settlementCreditTotal > 0 && <span className="settlement-credit">Saldo a favor / ajuste: {formatEuro(settlementCreditTotal)}</span>}
+            {missingSettlementPriceCount > 0 && <span className="settlement-warning">⚠ {missingSettlementPriceCount} entradas pagadas sin precio; no incluidas en el cálculo.</span>}
+          </div>
+          <div className="settlement-groups">
+            <strong>Desglose por grupo</strong>
+            {settlementRows.length ? settlementRows.map(item => <div className="settlement-group-row" key={item.id}>
+              <span>{item.label} <small>{item.count} incluidas{item.missing > 0 ? ` · ${item.missing} pagadas sin precio` : ''}{item.credit > 0 ? ` · saldo a favor ${formatEuro(item.credit)}` : ''}</small></span>
+              <span className="settlement-group-values"><strong>Por liquidar: {formatEuro(item.due)}</strong><small>Ya entregado: {formatEuro(item.paid)}</small></span>
+            </div>) : <span className="empty-inline">Todavía no hay entradas pagadas con importe registrado.</span>}
+          </div>
+        </section>
         <div className="admin-action-row">
           {selectedEvent.event.status === 'open' && <button className={`button ${selectedEvent.event.is_paused ? 'button-primary' : 'button-light'}`} onClick={() => void toggleEventPause()} disabled={busy}>{selectedEvent.event.is_paused ? '▶ Reanudar modificaciones' : 'Ⅱ Pausar modificaciones'}</button>}
           <button className="button button-light" onClick={() => editEvent(selectedEvent.event)}>Editar datos del evento</button>
@@ -1022,11 +1053,11 @@ function AdminApp() {
       </> : <>
         <div className="admin-title-row"><div><span className="eyebrow">TICKETBAXE</span><h1>Eventos</h1><p>Crea eventos y consulta sus listas.</p></div><div className="admin-title-actions"><button className="button button-light" onClick={() => { setEventForm({ id: '', name: '', description: '', starts_at: '', deadline_at: '', capacity: '', is_published: true, poster_url: '' }); setPosterFile(null); setShowEventForm(true); }}>＋ Crear evento</button><button className="button button-primary" onClick={() => { setGroupForm({ id: '', label: '', responsible_name: '', rrpp_name: '', contact: '', event_ids: [] }); setShowGroupForm(true); void loadGroups(); }}>＋ Crear grupo</button></div></div>
         {tab === 'dashboard' && <>
-          <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div><div className="overview-card"><span>TOTAL A LIQUIDAR</span><strong>{formatEuro(events.filter(event => event.status === 'closed' || event.has_official_snapshot).reduce((sum, event) => sum + Number(event.settlement_total ?? 0), 0))}</strong><small>{events.filter(event => event.status === 'closed' || event.has_official_snapshot).reduce((sum, event) => sum + Number(event.settlement_missing_price_count ?? 0), 0) > 0 ? `${events.filter(event => event.status === 'closed' || event.has_official_snapshot).reduce((sum, event) => sum + Number(event.settlement_missing_price_count ?? 0), 0)} entradas pagadas sin importe` : 'Eventos cerrados o reabiertos · entradas pagadas'}</small></div></div>
+          <div className="overview-cards"><div className="overview-card"><span>EVENTOS</span><strong>{events.length}</strong><small>En el calendario</small></div><div className="overview-card"><span>GRUPOS ACTIVOS</span><strong>{activeGroups}</strong><small>Con acceso habilitado</small></div><div className="overview-card"><span>PERSONAS APUNTADAS</span><strong>{events.reduce((sum, event) => sum + (event.attendee_count ?? 0), 0)}</strong><small>Suma de todos los eventos</small></div><div className="overview-card"><span>PENDIENTE DE LIQUIDAR</span><strong>{formatEuro(events.filter(event => event.status === 'closed' || event.has_official_snapshot).reduce((sum, event) => sum + Number(event.settlement_total ?? 0), 0))}</strong><small>Eventos cerrados o reabiertos</small></div><div className="overview-card"><span>YA PAGADO AL ESTABLECIMIENTO</span><strong>{formatEuro(events.filter(event => event.status === 'closed' || event.has_official_snapshot).reduce((sum, event) => sum + Number(event.settlement_paid_total ?? 0), 0))}</strong><small>Importe ya entregado</small></div></div>
           <div className="section-heading"><div><h2>Calendario de eventos</h2><p>Abre cualquier evento para revisar las listas y generar su versión oficial.</p></div><button className="text-button" onClick={() => void loadDashboard()}>↻ Actualizar</button></div>
           {events.length === 0 ? <EmptyState title="Todavía no has creado eventos" text="Crea el primer evento para empezar a organizar la lista." /> : <div className="admin-event-list">{events.map(item => <button className="admin-event-row" key={item.id} onClick={() => void openAdminEvent(item)}>
             <div className="admin-event-date"><strong>{new Date(item.starts_at).toLocaleDateString('es-ES', { day: '2-digit' })}</strong><span>{new Date(item.starts_at).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')}</span></div>
-            <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados · {(item.status === 'closed' || item.has_official_snapshot) ? 'A liquidar: ' : 'Provisional: '}{formatEuro(item.settlement_total ?? 0)}</span></div>
+            <div className="admin-event-name"><strong>{item.name}</strong><span>{dateTime(item.starts_at)} · {item.group_count ?? 0} grupos asignados · {(item.status === 'closed' || item.has_official_snapshot) ? 'Por liquidar: ' : 'Provisional: '}{formatEuro(item.settlement_total ?? 0)} · Ya entregado: {formatEuro(item.settlement_paid_total ?? 0)}</span></div>
             <div className="admin-event-count"><strong>{item.attendee_count ?? 0}</strong><span>asistentes</span></div>
             <StatusPill status={item.status} editable={item.status === 'open' && new Date(item.deadline_at).getTime() > Date.now()} paused={item.is_paused} /><b className="row-arrow">→</b>
           </button>)}</div>}
