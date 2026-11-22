@@ -2717,7 +2717,7 @@ body, html { background: var(--paper); color: var(--ink); }
 .price-fixed .price-exception-link{margin-top:3px;padding:0;font-size:9px}
 .price-fixed .price-exception-link:hover{text-decoration:underline}
 .price-editor .price-save{white-space:nowrap}
-.overview-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+.overview-cards{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media(max-width:900px){
   .overview-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
   .overview-card:nth-child(2){border-right:0}
@@ -2739,3 +2739,22 @@ body, html { background: var(--paper); color: var(--ink); }
 }
 .history-exception{display:inline-block;margin-top:7px;padding:4px 7px;color:#795b2d;background:#f6f0e5;border:1px solid #e5d6b8;font:600 8px 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.04em}
 .settlement-warning{display:block;margin-top:7px;color:var(--amber);font-size:9px;line-height:1.45}
+
+
+/* Liquidación al establecimiento */
+.establishment-payment-cell{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:145px}
+.establishment-pay-button{max-width:185px;padding:6px 8px;color:#315d49;background:#edf4ed;border:1px solid #c9d9ca;border-radius:3px;font:600 9px/1.35 'DM Mono',monospace;text-align:left;cursor:pointer}
+.establishment-pay-button:hover:not(:disabled){color:#fff;background:#315d49;border-color:#315d49}
+.establishment-pay-button:disabled{opacity:.45;cursor:not-allowed}
+.establishment-paid-label{color:#315d49;font:600 9px/1.4 'DM Mono',monospace}
+.settlement-already-paid{display:flex;flex-direction:column;gap:3px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.settlement-already-paid span{color:var(--muted);font:500 8px 'DM Mono',monospace;letter-spacing:.06em}
+.settlement-already-paid strong{color:#315d49;font:600 20px 'Newsreader',Georgia,serif}
+.settlement-credit{margin-top:5px;color:var(--amber);font-size:10px}
+.settlement-group-values{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right}
+.settlement-group-values>strong{font:600 10px 'DM Mono',monospace}
+.settlement-group-values>small{color:#315d49;font:500 8px 'DM Mono',monospace}
+@media(max-width:620px){
+  .establishment-payment-cell{min-width:125px}
+  .establishment-pay-button{max-width:150px}
+}
