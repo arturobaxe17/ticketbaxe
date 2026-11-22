@@ -525,52 +525,21 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'set_attendee_establishment_paid') {
       const attendeeId = String(body.attendee_id ?? '');
-      const markedPaid = body.paid === true;
-      const { data: attendee, error: lookupError } = await db.from('attendees')
-        .select('id, event_id, group_id, full_name, paid, status, price_paid, establishment_paid_at, establishment_paid_amount')
-        .eq('id', attendeeId).maybeSingle();
-      if (lookupError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
-      if (markedPaid) {
-        if (attendee.status === 'cancelled') throw new HttpError('No se puede liquidar una entrada cancelada.');
-        if (attendee.paid !== true) throw new HttpError('Primero debes marcar la entrada como pagada por el cliente.');
-        if (attendee.price_paid === null || attendee.price_paid === undefined) {
-          throw new HttpError('Registra primero el precio de esta entrada.');
-        }
-        if (attendee.establishment_paid_at !== null) {
-          return json(req, { ok: true, paid_to_establishment: true, amount: Number(attendee.establishment_paid_amount) });
-        }
-        const amount = Number(attendee.price_paid);
-        const now = new Date().toISOString();
-        const { error: updateError } = await db.from('attendees').update({
-          establishment_paid_at: now,
-          establishment_paid_amount: amount,
-          establishment_paid_by: admin.id,
-        }).eq('id', attendeeId);
-        if (updateError) throw new HttpError('No se pudo registrar el pago al establecimiento.', 500);
-        await writeAudit(db, {
-          actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
-          action: 'attendee.marked_paid_to_establishment',
-          details: { attendee_id: attendeeId, full_name: attendee.full_name, amount, paid_at: now },
-        });
-        return json(req, { ok: true, paid_to_establishment: true, amount, paid_at: now });
-      }
-      if (attendee.establishment_paid_at === null) {
-        return json(req, { ok: true, paid_to_establishment: false });
-      }
-      const previousAmount = Number(attendee.establishment_paid_amount);
-      const previousPaidAt = attendee.establishment_paid_at;
-      const { error: updateError } = await db.from('attendees').update({
-        establishment_paid_at: null,
-        establishment_paid_amount: null,
-        establishment_paid_by: null,
-      }).eq('id', attendeeId);
-      if (updateError) throw new HttpError('No se pudo deshacer la marca de pago al establecimiento.', 500);
-      await writeAudit(db, {
-        actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
-        action: 'attendee.unmarked_paid_to_establishment',
-        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_amount: previousAmount, previous_paid_at: previousPaidAt },
+      const paid = body.paid === true;
+      const { data, error } = await db.rpc('set_attendee_establishment_paid', {
+        p_attendee_id: attendeeId,
+        p_admin_id: admin.id,
+        p_paid: paid,
       });
-      return json(req, { ok: true, paid_to_establishment: false });
+      if (error) {
+        const message = error.message ?? '';
+        if (message.includes('ATTENDEE_NOT_FOUND')) throw new HttpError('No se ha encontrado el asistente.', 404);
+        if (message.includes('ATTENDEE_CANCELLED')) throw new HttpError('No se puede liquidar una entrada cancelada.', 409);
+        if (message.includes('CUSTOMER_PAYMENT_REQUIRED')) throw new HttpError('Primero debes marcar la entrada como pagada por el cliente.', 409);
+        if (message.includes('ATTENDEE_PRICE_REQUIRED')) throw new HttpError('Registra primero el precio de esta entrada.', 409);
+        throw new HttpError('No se pudo registrar el pago al establecimiento.', 500);
+      }
+      return json(req, { ok: true, ...(data ?? {}) });
     }
 
     if (action === 'set_attendee_paid') {
