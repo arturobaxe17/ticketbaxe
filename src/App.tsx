@@ -784,6 +784,28 @@ function AdminApp() {
     finally { setBusy(false); }
   }
 
+  async function toggleEstablishmentPaid(person: Attendee) {
+    if (!selectedEvent) return;
+    const markedPaid = !person.establishment_paid_at;
+    if (markedPaid) {
+      if (person.status === 'cancelled' || person.paid !== true || person.price_paid == null) {
+        notify('error', 'Para liquidarla al establecimiento, la entrada debe estar activa, pagada por el cliente y tener precio registrado.');
+        return;
+      }
+      if (!window.confirm('Se guardará como entregado al establecimiento ' + formatEuro(person.price_paid) + '. El importe quedará registrado con fecha y usuario. ¿Continuar?')) return;
+    } else if (!window.confirm('¿Deshacer la marca de pago al establecimiento? El importe volverá a figurar como pendiente de liquidar.')) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await adminApi('set_attendee_establishment_paid', { attendee_id: person.id, paid: markedPaid });
+      await openAdminEvent(selectedEvent.event);
+      await loadDashboard();
+      notify('success', markedPaid ? 'Pago al establecimiento registrado.' : 'Marca de pago al establecimiento deshecha.');
+    } catch (error) { notify('error', (error as Error).message); }
+    finally { setBusy(false); }
+  }
+
   async function saveAttendeeEntryNumber(person: Attendee) {
     if (!selectedEvent) return;
     const raw = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
@@ -974,7 +996,7 @@ function AdminApp() {
         <div className="section-heading"><div><h2>Listas de grupo</h2><p>Personas apuntadas por los responsables. Sus datos identificativos solo se muestran aquí.</p></div>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && selectedEvent.groups.length > 0 && <button className="button button-primary" onClick={() => { setAdminAttendeeForm({ ...emptyAttendee, group_id: selectedEvent.groups[0]?.id ?? '' }); setShowAdminAttendeeForm(true); }}>＋ Añadir a un grupo</button>}</div>
         {(selectedEvent.event.status !== 'open' || new Date(selectedEvent.event.deadline_at).getTime() <= Date.now()) && selectedEvent.event.status !== 'cancelled' && <div className="locked-banner"><span>🔒</span><div><strong>Edición bloqueada.</strong><p>Para corregir un dato, reabre el evento con un nuevo plazo. Después podrás generar una nueva versión oficial.</p></div></div>}
         {selectedEvent.attendees.some((person: Attendee) => person.name_duplicate) && <div className="duplicate-alert"><strong>⚠ Posibles nombres repetidos detectados</strong><span>Revisa los avisos marcados en la lista y consúltalo con el responsable del grupo. No se bloquean automáticamente porque pueden ser personas distintas con el mismo nombre.</span></div>}
-        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead><tbody>
+        <div className="table-card"><div className="table-scroll"><table><thead><tr><th>Grupo responsable</th><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago cliente</th><th>Establecimiento</th><th className="action-cell">Acciones</th></tr></thead><tbody>
           {selectedEvent.attendees.filter((person: Attendee) => !person.is_loose).map((person: Attendee) => {
             const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
             const entryUnchanged = entryDraft.trim() === String(person.entry_number ?? '');
@@ -1000,10 +1022,11 @@ function AdminApp() {
               <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
               <td><span className="document-type">{person.document_type}</span> {person.document}</td>
               <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
+              <td data-label="Establecimiento"><div className="establishment-payment-cell">{person.establishment_paid_at ? <><span className="establishment-paid-label">✓ {formatEuro(person.establishment_paid_amount)} entregados</span><button className="text-button text-danger" onClick={() => void toggleEstablishmentPaid(person)} disabled={busy}>Deshacer</button></> : <button className="establishment-pay-button" onClick={() => void toggleEstablishmentPaid(person)} disabled={busy || person.status === 'cancelled' || person.paid !== true || person.price_paid == null} title={person.paid !== true ? 'Primero marca el pago del cliente' : person.price_paid == null ? 'Registra primero el precio' : ''}>Marcar pagado al establecimiento</button>}</div></td>
               <td className="action-cell">{person.name_duplicate && <span className="duplicate-warning" title="Coincide con otro nombre de este evento">⚠ Nombre repetido</span>}<div className="row-actions"><button type="button" className="info-icon-button" onClick={() => void openAdminAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></>}</div></td>
             </tr>;
           })}
-          {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={7} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
+          {selectedEvent.attendees.every((person: Attendee) => person.is_loose) && <tr><td colSpan={8} className="empty-cell">Todavía no hay personas en las listas de grupo.</td></tr>}
         </tbody></table></div></div>
         <section className="loose-tickets-section">
           <div className="section-heading">
@@ -1019,7 +1042,7 @@ function AdminApp() {
           {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).length === 0
             ? <div className="loose-empty"><span className="loose-empty-icon">＋</span><div><strong>Aún no hay entradas sueltas</strong><p>Añade aquí a quien te pida una entrada directamente, sin pasar por un grupo.</p></div></div>
             : <div className="table-card"><div className="table-scroll"><table>
-              <thead><tr><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago</th><th className="action-cell">Acciones</th></tr></thead>
+              <thead><tr><th>Nombre</th><th>N.º entrada</th><th>Precio (€)</th><th>Documento</th><th>Pago cliente</th><th>Establecimiento</th><th className="action-cell">Acciones</th></tr></thead>
               <tbody>
                 {selectedEvent.attendees.filter((person: Attendee) => person.is_loose).map((person: Attendee) => {
                   const entryDraft = entryNumberDrafts[person.id] ?? String(person.entry_number ?? '');
@@ -1040,6 +1063,7 @@ function AdminApp() {
                     <td><AdminPriceEditor person={person} value={priceDraft} busy={busy} onChange={value => setPriceDrafts(current => ({ ...current, [person.id]: value }))} onSave={() => void saveAttendeePrice(person)} /></td>
                     <td><span className="document-type">{person.document_type}</span> {person.document}</td>
                           <td>{person.status !== 'cancelled' ? <button className={`paid-toggle ${person.paid ? 'is-paid' : ''}`} onClick={() => void toggleAttendeePaid(person)} disabled={busy || (!person.paid && person.price_paid == null)} title={!person.paid && person.price_paid == null ? 'Registra el precio antes de marcar el pago' : ''}>{person.paid ? '✓ Pagado' : person.price_paid == null ? 'Añadir precio' : 'Marcar pagado'}</button> : '—'}</td>
+                    <td data-label="Establecimiento"><div className="establishment-payment-cell">{person.establishment_paid_at ? <><span className="establishment-paid-label">✓ {formatEuro(person.establishment_paid_amount)} entregados</span><button className="text-button text-danger" onClick={() => void toggleEstablishmentPaid(person)} disabled={busy}>Deshacer</button></> : <button className="establishment-pay-button" onClick={() => void toggleEstablishmentPaid(person)} disabled={busy || person.status === 'cancelled' || person.paid !== true || person.price_paid == null} title={person.paid !== true ? 'Primero marca el pago del cliente' : person.price_paid == null ? 'Registra primero el precio' : ''}>Marcar pagado al establecimiento</button>}</div></td>
                     <td className="action-cell"><div className="row-actions"><button type="button" className="info-icon-button" onClick={() => void openAdminAttendeeHistory(person)} title="Ver historial de cambios" aria-label={'Ver historial de ' + person.full_name}>ⓘ</button>{selectedEvent.event.status === 'open' && new Date(selectedEvent.event.deadline_at).getTime() > Date.now() && person.status !== 'cancelled' && <><button className="text-button" onClick={() => editAdminAttendee(person)}>Editar</button><button className="text-button text-danger" onClick={() => void cancelAdminAttendee(person)}>Cancelar</button></>}</div></td>
                   </tr>;
                 })}
