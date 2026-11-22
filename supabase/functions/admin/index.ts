@@ -63,13 +63,16 @@ async function getEventDetail(db: ReturnType<typeof adminDb>, eventId: string) {
     groups = data ?? [];
   }
   const { data: rows, error: attendeeError } = await db.from('attendees')
-    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, price_frozen_at, created_at, updated_at')
+    .select('id, event_id, group_id, full_name, document_type, document_ciphertext, document_iv, status, paid, entry_number, price_paid, price_frozen_at, establishment_paid_at, establishment_paid_amount, establishment_paid_by, created_at, updated_at')
     .eq('event_id', eventId).order('full_name');
   if (attendeeError) throw new HttpError('No se pudieron cargar los asistentes.', 500);
   const attendees = [];
   for (const row of rows ?? []) attendees.push({
     ...(await decryptAttendee(row)),
     paid: row.paid === true,
+    establishment_paid_at: row.establishment_paid_at,
+    establishment_paid_amount: row.establishment_paid_amount,
+    establishment_paid_by: row.establishment_paid_by,
     is_loose: row.group_id === looseGroup.id,
   });
   const nameKey = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/[^a-z0-9]/g, '');
@@ -272,18 +275,23 @@ Deno.serve(async (req: Request) => {
       if (metricsError) throw new HttpError('No se pudieron calcular los contadores de los eventos.', 500);
       const metricsByEvent = new Map((metrics ?? []).map((item: any) => [item.event_id, item]));
       const { data: settlementRows, error: settlementError } = await db.from('attendees')
-        .select('event_id, paid, status, price_paid')
-        .eq('paid', true).neq('status', 'cancelled');
+        .select('event_id, paid, status, price_paid, establishment_paid_at, establishment_paid_amount');
       if (settlementError) throw new HttpError('No se pudieron calcular los importes a liquidar.', 500);
-      const settlementByEvent = new Map<string, number>();
+      const settlementGrossByEvent = new Map<string, number>();
+      const settlementPaidByEvent = new Map<string, number>();
       const settlementMissingPriceByEvent = new Map<string, number>();
       for (const attendee of settlementRows ?? []) {
+        if (attendee.establishment_paid_at !== null && attendee.establishment_paid_amount !== null) {
+          settlementPaidByEvent.set(attendee.event_id,
+            (settlementPaidByEvent.get(attendee.event_id) ?? 0) + Number(attendee.establishment_paid_amount));
+        }
+        if (attendee.paid !== true || attendee.status === 'cancelled') continue;
         if (attendee.price_paid === null || attendee.price_paid === undefined) {
           settlementMissingPriceByEvent.set(attendee.event_id, (settlementMissingPriceByEvent.get(attendee.event_id) ?? 0) + 1);
           continue;
         }
-        const value = Number(attendee.price_paid);
-        settlementByEvent.set(attendee.event_id, (settlementByEvent.get(attendee.event_id) ?? 0) + value);
+        settlementGrossByEvent.set(attendee.event_id,
+          (settlementGrossByEvent.get(attendee.event_id) ?? 0) + Number(attendee.price_paid));
       }
       const { data: snapshotEvents, error: snapshotEventsError } = await db.from('official_snapshots')
         .select('event_id');
@@ -298,7 +306,9 @@ Deno.serve(async (req: Request) => {
           pending_count: Number(item.pending_count ?? 0),
           group_count: Number(item.group_count ?? 0),
           has_official_snapshot: hasOfficialSnapshot.has(event.id),
-          settlement_total: Math.round((settlementByEvent.get(event.id) ?? 0) * 100) / 100,
+          settlement_total: Math.round(Math.max(0, (settlementGrossByEvent.get(event.id) ?? 0) - (settlementPaidByEvent.get(event.id) ?? 0)) * 100) / 100,
+          settlement_paid_total: Math.round((settlementPaidByEvent.get(event.id) ?? 0) * 100) / 100,
+          settlement_credit_total: Math.round(Math.max(0, (settlementPaidByEvent.get(event.id) ?? 0) - (settlementGrossByEvent.get(event.id) ?? 0)) * 100) / 100,
           settlement_missing_price_count: settlementMissingPriceByEvent.get(event.id) ?? 0,
         };
       });
@@ -511,6 +521,56 @@ Deno.serve(async (req: Request) => {
       await eventIsEditable(db, eventId);
       const attendee = await storeAttendee(db, { ...(body.attendee ?? {}), event_id: eventId }, groupId, 'admin', admin.id);
       return json(req, { ok: true, attendee });
+    }
+
+    if (action === 'set_attendee_establishment_paid') {
+      const attendeeId = String(body.attendee_id ?? '');
+      const markedPaid = body.paid === true;
+      const { data: attendee, error: lookupError } = await db.from('attendees')
+        .select('id, event_id, group_id, full_name, paid, status, price_paid, establishment_paid_at, establishment_paid_amount')
+        .eq('id', attendeeId).maybeSingle();
+      if (lookupError || !attendee) throw new HttpError('No se ha encontrado el asistente.', 404);
+      if (markedPaid) {
+        if (attendee.status === 'cancelled') throw new HttpError('No se puede liquidar una entrada cancelada.');
+        if (attendee.paid !== true) throw new HttpError('Primero debes marcar la entrada como pagada por el cliente.');
+        if (attendee.price_paid === null || attendee.price_paid === undefined) {
+          throw new HttpError('Registra primero el precio de esta entrada.');
+        }
+        if (attendee.establishment_paid_at !== null) {
+          return json(req, { ok: true, paid_to_establishment: true, amount: Number(attendee.establishment_paid_amount) });
+        }
+        const amount = Number(attendee.price_paid);
+        const now = new Date().toISOString();
+        const { error: updateError } = await db.from('attendees').update({
+          establishment_paid_at: now,
+          establishment_paid_amount: amount,
+          establishment_paid_by: admin.id,
+        }).eq('id', attendeeId);
+        if (updateError) throw new HttpError('No se pudo registrar el pago al establecimiento.', 500);
+        await writeAudit(db, {
+          actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
+          action: 'attendee.marked_paid_to_establishment',
+          details: { attendee_id: attendeeId, full_name: attendee.full_name, amount, paid_at: now },
+        });
+        return json(req, { ok: true, paid_to_establishment: true, amount, paid_at: now });
+      }
+      if (attendee.establishment_paid_at === null) {
+        return json(req, { ok: true, paid_to_establishment: false });
+      }
+      const previousAmount = Number(attendee.establishment_paid_amount);
+      const previousPaidAt = attendee.establishment_paid_at;
+      const { error: updateError } = await db.from('attendees').update({
+        establishment_paid_at: null,
+        establishment_paid_amount: null,
+        establishment_paid_by: null,
+      }).eq('id', attendeeId);
+      if (updateError) throw new HttpError('No se pudo deshacer la marca de pago al establecimiento.', 500);
+      await writeAudit(db, {
+        actor_type: 'admin', actor_id: admin.id, group_id: attendee.group_id, event_id: attendee.event_id,
+        action: 'attendee.unmarked_paid_to_establishment',
+        details: { attendee_id: attendeeId, full_name: attendee.full_name, previous_amount: previousAmount, previous_paid_at: previousPaidAt },
+      });
+      return json(req, { ok: true, paid_to_establishment: false });
     }
 
     if (action === 'set_attendee_paid') {
