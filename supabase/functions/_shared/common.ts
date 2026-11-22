@@ -232,6 +232,9 @@ export async function getAttendeeHistory(
     .select('id, actor_type, group_id, action, details, created_at')
     .eq('attendee_id', attendeeId).order('created_at', { ascending: false }).limit(100);
   if (error) throw new HttpError('No se pudo cargar el historial de esta entrada.', 500);
+  const visibleRows = permittedGroupId
+    ? (rows ?? []).filter((row: any) => !['attendee.marked_paid_to_establishment', 'attendee.unmarked_paid_to_establishment'].includes(row.action))
+    : (rows ?? []);
   const groupIds = [...new Set((rows ?? []).filter((row: any) => row.actor_type === 'group' && row.group_id).map((row: any) => row.group_id))];
   const groupLabels = new Map<string, string>();
   if (groupIds.length) {
@@ -240,7 +243,7 @@ export async function getAttendeeHistory(
   }
   return {
     attendee: { id: attendee.id, full_name: attendee.full_name },
-    history: (rows ?? []).map((row: any) => ({
+    history: visibleRows.map((row: any) => ({
       id: row.id, actor_type: row.actor_type,
       actor_label: row.actor_type === 'admin' ? 'Administración' : row.actor_type === 'system' ? 'Sistema' : 'Responsable · ' + (groupLabels.get(row.group_id) ?? 'Grupo'),
       action: row.action, details: row.details ?? {}, created_at: row.created_at,
